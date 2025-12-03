@@ -1,0 +1,357 @@
+{
+  "version": "1.0.0",
+  "role": "US_CBL",
+  "description": "US Computer Based Learning kiosk configuration",
+  "author": "Joshua Walderbach",
+  "lastModified": "2025-12-03",
+  "checks": [
+    {
+      "id": "chrome-not-installed",
+      "name": "Google Chrome Not Installed",
+      "type": "ApplicationNotInstalled",
+      "enabled": true,
+      "properties": {
+        "applicationName": "Google Chrome",
+        "searchPaths": [
+          "C:\\Program Files*\\Google\\Chrome\\Application\\chrome.exe",
+          "C:\\Users\\*\\AppData\\Local\\Google\\Chrome\\Application\\chrome.exe"
+        ],
+        "uninstallPaths": [
+          "C:\\Program Files*\\Google\\Chrome\\Application\\*\\Installer\\setup.exe",
+          "C:\\Users\\*\\AppData\\Local\\Google\\Chrome\\Application\\*\\Installer\\setup.exe"
+        ],
+        "uninstallArguments": "--uninstall --multi-install --chrome --system-level --force-uninstall"
+      }
+    },
+    {
+      "id": "desktop-folders-empty",
+      "name": "Desktop Folders Cleared",
+      "type": "FolderEmpty",
+      "enabled": true,
+      "properties": {
+        "paths": [
+          "$env:PUBLIC\\Desktop",
+          "$env:USERPROFILE\\Desktop"
+        ],
+        "includeAllUserProfiles": true
+      }
+    },
+    {
+      "id": "start-menu-allowed-shortcuts",
+      "name": "Start Menu Contains Only Allowed Shortcuts",
+      "type": "ShortcutsAllowList",
+      "enabled": true,
+      "properties": {
+        "path": "C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs",
+        "allowedShortcuts": [
+          "GTA Time Clock.lnk",
+          "Live Better U.lnk",
+          "OneWalmart.lnk",
+          "On-Screen Keyboard.lnk",
+          "Time Adjustment.lnk",
+          "Two-Step Verification.lnk",
+          "ULearn.lnk",
+          "Volume.lnk",
+          "Walmart Academy.lnk",
+          "Walmart Careers.lnk"
+        ]
+      }
+    },
+    {
+      "id": "user-account-pictures-exist",
+      "name": "User Account Pictures Present",
+      "type": "FolderHasFiles",
+      "enabled": true,
+      "properties": {
+        "path": "C:\\ProgramData\\Microsoft\\User Account Pictures",
+        "minimumFileCount": 1,
+        "sourceAssetPath": "AccountPictures"
+      }
+    },
+    {
+      "id": "icon-files-exist",
+      "name": "Icon Files Present",
+      "type": "FilesExist",
+      "enabled": true,
+      "properties": {
+        "destinationPath": "C:\\Walmart Applications\\Desktop Icons",
+        "files": [
+          "GTA_Time_Clock.ico",
+          "Live_Better_U.ico",
+          "OneWalmart.ico",
+          "Time_Adjustment.ico",
+          "Two-Step_Verification.ico",
+          "ULearn.ico",
+          "Walmart_Academy.ico",
+          "Walmart_Careers.ico"
+        ],
+        "sourceAssetPath": "Icons"
+      }
+    },
+    {
+      "id": "gta-time-clock-shortcut",
+      "name": "GTA Time Clock Shortcut",
+      "type": "ShortcutExists",
+      "enabled": true,
+      "properties": {
+        "path": "C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\GTA Time Clock.lnk",
+        "targetPath": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
+        "arguments": "--no-first-run --kiosk http://timeclock.walmart.com --edge-kiosk-type=public-browsing",
+        "iconLocation": "C:\\Walmart Applications\\Desktop Icons\\GTA_Time_Clock.ico",
+        "description": "GTA Time Clock"
+      }
+    },
+    {
+      "id": "live-better-u-shortcut",
+      "name": "Live Better U Shortcut",
+      "type": "ShortcutExists",
+      "enabled": true,
+      "properties": {
+        "path": "C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\Live Better U.lnk",
+        "targetPath": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
+        "arguments": "--no-first-run --kiosk https://wmlink.wal-mart.com/livebetteru --edge-kiosk-type=public-browsing",
+        "iconLocation": "C:\\Walmart Applications\\Desktop Icons\\Live_Better_U.ico",
+        "description": "Live Better U"
+      }
+    },
+    {
+      "id": "onewalmart-shortcut",
+      "name": "OneWalmart Shortcut",
+      "type": "ShortcutExists",
+      "enabled": true,
+      "properties": {
+        "path": "C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\OneWalmart.lnk",
+        "targetPath": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
+        "arguments": "--no-first-run --kiosk https://wmlink.wal-mart.com/Wire --edge-kiosk-type=public-browsing",
+        "iconLocation": "C:\\Walmart Applications\\Desktop Icons\\OneWalmart.ico",
+        "description": "OneWalmart"
+      }
+    },
+    {
+      "id": "on-screen-keyboard-shortcut",
+      "name": "On-Screen Keyboard Shortcut",
+      "type": "ShortcutExists",
+      "enabled": true,
+      "properties": {
+        "path": "C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\On-Screen Keyboard.lnk",
+        "targetPath": "C:\\Windows\\System32\\osk.exe",
+        "arguments": "",
+        "iconLocation": "C:\\Windows\\System32\\osk.exe",
+        "description": "On-Screen Keyboard"
+      }
+    },
+    {
+      "id": "time-adjustment-shortcut",
+      "name": "Time Adjustment Shortcut",
+      "type": "ShortcutExists",
+      "enabled": true,
+      "properties": {
+        "path": "C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\Time Adjustment.lnk",
+        "targetPath": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
+        "arguments": "--no-first-run --kiosk https://wmlink.wal-mart.com/eta --edge-kiosk-type=public-browsing",
+        "iconLocation": "C:\\Walmart Applications\\Desktop Icons\\Time_Adjustment.ico",
+        "description": "Time Adjustment"
+      }
+    },
+    {
+      "id": "two-step-verification-shortcut",
+      "name": "Two-Step Verification Shortcut",
+      "type": "ShortcutExists",
+      "enabled": true,
+      "properties": {
+        "path": "C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\Two-Step Verification.lnk",
+        "targetPath": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
+        "arguments": "--no-first-run --kiosk https://svipreg.wal-mart.com --edge-kiosk-type=public-browsing",
+        "iconLocation": "C:\\Walmart Applications\\Desktop Icons\\Two-Step_Verification.ico",
+        "description": "Two-Step Verification"
+      }
+    },
+    {
+      "id": "ulearn-shortcut",
+      "name": "ULearn Shortcut",
+      "type": "ShortcutExists",
+      "enabled": true,
+      "properties": {
+        "path": "C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\ULearn.lnk",
+        "targetPath": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
+        "arguments": "--no-first-run --kiosk https://wmlink.wal-mart.com/ULearn --edge-kiosk-type=public-browsing",
+        "iconLocation": "C:\\Walmart Applications\\Desktop Icons\\ULearn.ico",
+        "description": "ULearn"
+      }
+    },
+    {
+      "id": "volume-shortcut",
+      "name": "Volume Shortcut",
+      "type": "ShortcutExists",
+      "enabled": true,
+      "properties": {
+        "path": "C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\Volume.lnk",
+        "targetPath": "C:\\Windows\\System32\\SndVol.exe",
+        "arguments": "",
+        "iconLocation": "C:\\Windows\\System32\\SndVol.exe",
+        "description": "Volume"
+      }
+    },
+    {
+      "id": "walmart-academy-shortcut",
+      "name": "Walmart Academy Shortcut",
+      "type": "ShortcutExists",
+      "enabled": true,
+      "properties": {
+        "path": "C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\Walmart Academy.lnk",
+        "targetPath": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
+        "arguments": "--no-first-run --kiosk https://academy.walmart.com/home --edge-kiosk-type=public-browsing",
+        "iconLocation": "C:\\Walmart Applications\\Desktop Icons\\Walmart_Academy.ico",
+        "description": "Walmart Academy"
+      }
+    },
+    {
+      "id": "walmart-careers-shortcut",
+      "name": "Walmart Careers Shortcut",
+      "type": "ShortcutExists",
+      "enabled": true,
+      "properties": {
+        "path": "C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\Walmart Careers.lnk",
+        "targetPath": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
+        "arguments": "--no-first-run --kiosk https://careers.walmart.com/ --edge-kiosk-type=public-browsing",
+        "iconLocation": "C:\\Walmart Applications\\Desktop Icons\\Walmart_Careers.ico",
+        "description": "Walmart Careers"
+      }
+    },
+    {
+      "id": "assigned-access-configured",
+      "name": "Assigned Access Kiosk Mode",
+      "type": "AssignedAccess",
+      "enabled": true,
+      "properties": {
+        "profileId": "{2deb1110-8a3e-4de5-a2e4-fe3d4990ef4d}",
+        "displayName": "US CBL Kiosk",
+        "allowedApps": [
+          "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
+          "C:\\Program Files (x86)\\Microsoft\\EdgeUpdate\\MicrosoftEdgeUpdate.exe",
+          "C:\\Windows\\System32\\osk.exe",
+          "C:\\Windows\\System32\\sndvol.exe",
+          "%PROGRAMFILES%\\MCAFEE\\DLP\\AGENT\\FCAG.EXE",
+          "%PROGRAMFILES%\\WEBSENSE\\WEBSENSE ENDPOINT\\F1EUI.EXE",
+          "C:\\Walmart Applications\\bginfo\\bginfo.exe"
+        ],
+        "startPins": [
+          "%ALLUSERSPROFILE%\\Microsoft\\Windows\\Start Menu\\Programs\\GTA Time Clock.lnk",
+          "%ALLUSERSPROFILE%\\Microsoft\\Windows\\Start Menu\\Programs\\Live Better U.lnk",
+          "%ALLUSERSPROFILE%\\Microsoft\\Windows\\Start Menu\\Programs\\OneWalmart.lnk",
+          "%ALLUSERSPROFILE%\\Microsoft\\Windows\\Start Menu\\Programs\\On-Screen Keyboard.lnk",
+          "%ALLUSERSPROFILE%\\Microsoft\\Windows\\Start Menu\\Programs\\Time Adjustment.lnk",
+          "%ALLUSERSPROFILE%\\Microsoft\\Windows\\Start Menu\\Programs\\Two-Step Verification.lnk",
+          "%ALLUSERSPROFILE%\\Microsoft\\Windows\\Start Menu\\Programs\\ULearn.lnk",
+          "%ALLUSERSPROFILE%\\Microsoft\\Windows\\Start Menu\\Programs\\Volume.lnk",
+          "%ALLUSERSPROFILE%\\Microsoft\\Windows\\Start Menu\\Programs\\Walmart Academy.lnk",
+          "%ALLUSERSPROFILE%\\Microsoft\\Windows\\Start Menu\\Programs\\Walmart Careers.lnk"
+        ],
+        "showTaskbar": true,
+        "allowedNamespaces": [
+          "Downloads"
+        ]
+      }
+    },
+    {
+      "id": "hide-recommended-section",
+      "name": "Hide Start Menu Recommended Section",
+      "type": "RegistryValue",
+      "enabled": true,
+      "properties": {
+        "path": "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\Explorer",
+        "name": "HideRecommendedSection",
+        "value": 1,
+        "type": "DWord"
+      }
+    },
+    {
+      "id": "manifest-manipulator-task",
+      "name": "ManifestManipulator Scheduled Task",
+      "type": "ScheduledTaskExists",
+      "enabled": true,
+      "properties": {
+        "taskName": "ManifestManipulator",
+        "taskPath": "\\",
+        "execute": "Powershell.exe",
+        "arguments": "-ExecutionPolicy Bypass -NonInteractive -NoLogo -NoProfile -File C:\\Windows\\Packagelogs\\Customizations\\ManifestManipulator.ps1",
+        "trigger": "AtLogOn",
+        "runLevel": "Highest",
+        "principal": "NT AUTHORITY\\SYSTEM"
+      }
+    },
+    {
+      "id": "manifest-manipulator-script",
+      "name": "ManifestManipulator Script File",
+      "type": "FileContent",
+      "enabled": true,
+      "properties": {
+        "path": "C:\\Windows\\Packagelogs\\Customizations\\ManifestManipulator.ps1",
+        "sourceAssetPath": "Scripts\\ManifestManipulator.ps1"
+      }
+    },
+    {
+      "id": "auto-logon-enabled",
+      "name": "Auto-Logon Configuration",
+      "type": "RegistryValue",
+      "enabled": true,
+      "properties": {
+        "path": "HKLM:\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon",
+        "name": "AutoAdminLogon",
+        "value": "1",
+        "type": "String"
+      }
+    },
+    {
+      "id": "force-auto-logon",
+      "name": "Force Auto-Logon",
+      "type": "RegistryValue",
+      "enabled": true,
+      "properties": {
+        "path": "HKLM:\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon",
+        "name": "ForceAutoLogon",
+        "value": "1",
+        "type": "String"
+      }
+    },
+    {
+      "id": "kioskuser0-pinned-list-policy",
+      "name": "KioskUser0 Start Menu Pinned List Policy",
+      "type": "UserRegistryValue",
+      "enabled": true,
+      "properties": {
+        "username": "kioskUser0",
+        "path": "Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer",
+        "name": "NoStartMenuPinnedList",
+        "value": 0,
+        "type": "DWord"
+      }
+    },
+    {
+      "id": "LexmarkPrinterDriver",
+      "name": "Lexmark Universal v2 XL",
+      "type": "DriverInstalled",
+      "enabled": true,
+      "properties": {
+        "driverName": "Lexmark Universal v2 XL",
+        "driverClass": "Printer",
+        "sourceAssetPath": "Drivers\\Lexmark_Universal_v2_UD1_XL\\LMUD1p40.inf",
+        "minimumVersion": "3.0.7.0"
+      }
+    },
+    {
+      "id": "PersonnelPrinter",
+      "name": "Personnel Printer",
+      "type": "PrinterInstalled",
+      "enabled": true,
+      "properties": {
+        "printerName": "Personnel",
+        "driverName": "Lexmark Universal v2 XL",
+        "portName": "mfpr01",
+        "printerIP": "mfpr01",
+        "portType": "TCP",
+        "setAsDefault": true
+      }
+    }
+  ]
+}
