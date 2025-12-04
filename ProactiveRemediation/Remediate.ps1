@@ -343,11 +343,42 @@ function Repair-AssignedAccess {
     param($Properties, $CheckName)
 
     try {
+        # Check if running as SYSTEM (required for MDM_AssignedAccess)
+        $currentUser = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
+        if ($currentUser -ne "NT AUTHORITY\SYSTEM") {
+            return @{
+                Success = $false
+                Action = "SKIPPED - AssignedAccess requires SYSTEM context. Current user: $currentUser. Use PsExec or run via Intune."
+            }
+        }
+
         $namespaceName = "root\cimv2\mdm\dmmap"
         $className = "MDM_AssignedAccess"
         $obj = Get-CimInstance -Namespace $namespaceName -ClassName $className
 
-        # Build the XML configuration
+        # NEW: If configXmlPath is specified, read XML from file
+        if ($Properties.configXmlPath) {
+            $xmlPath = Join-Path $AssetBasePath $Properties.configXmlPath
+
+            if (-not (Test-Path $xmlPath)) {
+                return @{
+                    Success = $false
+                    Action = "Configuration XML not found: $xmlPath"
+                }
+            }
+
+            $configXml = Get-Content -Path $xmlPath -Raw
+
+            $obj.Configuration = [System.Net.WebUtility]::HtmlEncode($configXml)
+            Set-CimInstance -CimInstance $obj -ErrorAction Stop
+
+            return @{
+                Success = $true
+                Action = "Applied Assigned Access configuration from $($Properties.configXmlPath)"
+            }
+        }
+
+        # LEGACY: Property-based XML generation (backward compatibility)
         # Escape backslashes for JSON (\ becomes \\)
         $startPinsJson = ($Properties.startPins | ForEach-Object {
             $escapedPath = $_ -replace '\\', '\\'
@@ -396,21 +427,12 @@ function Repair-AssignedAccess {
 </AssignedAccessConfiguration>
 "@
 
-        # Check if running as SYSTEM (required for MDM_AssignedAccess)
-        $currentUser = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
-        if ($currentUser -ne "NT AUTHORITY\SYSTEM") {
-            return @{
-                Success = $false
-                Action = "SKIPPED - AssignedAccess requires SYSTEM context. Current user: $currentUser. Use PsExec or run via Intune."
-            }
-        }
-
         $obj.Configuration = [System.Net.WebUtility]::HtmlEncode($configXml)
         Set-CimInstance -CimInstance $obj -ErrorAction Stop
 
         return @{
             Success = $true
-            Action = "Applied Assigned Access configuration"
+            Action = "Applied Assigned Access configuration (legacy property-based)"
         }
     } catch {
         return @{

@@ -10,6 +10,7 @@
 $EngineVersion = "1.0.0"
 $ConfigPath = "C:\ProgramData\ConfigurationBlender\Config.json"
 $LogPath = "C:\ProgramData\ConfigurationBlender\Logs"
+$AssetBasePath = "C:\ProgramData\ConfigurationBlender\Assets"
 
 # ============================================================================
 # INITIALIZATION
@@ -297,6 +298,51 @@ function Test-AssignedAccess {
             }
         }
 
+        # NEW: If configXmlPath is specified, compare against XML file
+        if ($Properties.configXmlPath) {
+            $xmlPath = Join-Path $AssetBasePath $Properties.configXmlPath
+
+            if (-not (Test-Path $xmlPath)) {
+                return @{
+                    Passed = $false
+                    Issue = "Expected configuration XML not found: $xmlPath"
+                }
+            }
+
+            # Read expected XML and normalize it
+            $expectedXml = Get-Content -Path $xmlPath -Raw
+
+            # Decode the current configuration (it's HTML-encoded in WMI)
+            $currentXml = [System.Net.WebUtility]::HtmlDecode($obj.Configuration)
+
+            # Normalize both XMLs for comparison (remove whitespace, newlines)
+            # This handles formatting differences that don't affect the actual config
+            function Normalize-Xml {
+                param([string]$xml)
+                try {
+                    $xdoc = [System.Xml.Linq.XDocument]::Parse($xml)
+                    # Return canonical XML string without declaration, normalized
+                    return $xdoc.Root.ToString([System.Xml.Linq.SaveOptions]::DisableFormatting)
+                } catch {
+                    # If XML parsing fails, fall back to simple normalization
+                    return ($xml -replace '\s+', ' ' -replace '>\s+<', '><').Trim()
+                }
+            }
+
+            $normalizedExpected = Normalize-Xml -xml $expectedXml
+            $normalizedCurrent = Normalize-Xml -xml $currentXml
+
+            if ($normalizedExpected -ne $normalizedCurrent) {
+                return @{
+                    Passed = $false
+                    Issue = "Assigned Access configuration does not match expected XML from $($Properties.configXmlPath)"
+                }
+            }
+
+            return @{ Passed = $true; Issue = $null }
+        }
+
+        # LEGACY: Property-based validation (backward compatibility)
         # Check if profile ID matches
         $expectedProfile = $Properties.profileId
         if ($obj.Configuration -notlike "*$expectedProfile*") {

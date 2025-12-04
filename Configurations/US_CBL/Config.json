@@ -226,33 +226,7 @@
       "type": "AssignedAccess",
       "enabled": true,
       "properties": {
-        "profileId": "{2deb1110-8a3e-4de5-a2e4-fe3d4990ef4d}",
-        "displayName": "US CBL Kiosk",
-        "allowedApps": [
-          "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
-          "C:\\Program Files (x86)\\Microsoft\\EdgeUpdate\\MicrosoftEdgeUpdate.exe",
-          "C:\\Windows\\System32\\osk.exe",
-          "C:\\Windows\\System32\\sndvol.exe",
-          "%PROGRAMFILES%\\MCAFEE\\DLP\\AGENT\\FCAG.EXE",
-          "%PROGRAMFILES%\\WEBSENSE\\WEBSENSE ENDPOINT\\F1EUI.EXE",
-          "C:\\Walmart Applications\\bginfo\\bginfo.exe"
-        ],
-        "startPins": [
-          "%ALLUSERSPROFILE%\\Microsoft\\Windows\\Start Menu\\Programs\\GTA Time Clock.lnk",
-          "%ALLUSERSPROFILE%\\Microsoft\\Windows\\Start Menu\\Programs\\Live Better U.lnk",
-          "%ALLUSERSPROFILE%\\Microsoft\\Windows\\Start Menu\\Programs\\OneWalmart.lnk",
-          "%ALLUSERSPROFILE%\\Microsoft\\Windows\\Start Menu\\Programs\\On-Screen Keyboard.lnk",
-          "%ALLUSERSPROFILE%\\Microsoft\\Windows\\Start Menu\\Programs\\Time Adjustment.lnk",
-          "%ALLUSERSPROFILE%\\Microsoft\\Windows\\Start Menu\\Programs\\Two-Step Verification.lnk",
-          "%ALLUSERSPROFILE%\\Microsoft\\Windows\\Start Menu\\Programs\\ULearn.lnk",
-          "%ALLUSERSPROFILE%\\Microsoft\\Windows\\Start Menu\\Programs\\Volume.lnk",
-          "%ALLUSERSPROFILE%\\Microsoft\\Windows\\Start Menu\\Programs\\Walmart Academy.lnk",
-          "%ALLUSERSPROFILE%\\Microsoft\\Windows\\Start Menu\\Programs\\Walmart Careers.lnk"
-        ],
-        "showTaskbar": true,
-        "allowedNamespaces": [
-          "Downloads"
-        ]
+        "configXmlPath": "XML/AssignedAccessConfig.xml"
       }
     },
     {
