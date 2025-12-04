@@ -48,10 +48,7 @@ param(
     [string]$Role,
 
     [Parameter(Mandatory = $false)]
-    [string]$OutputPath = "Output",
-
-    [Parameter(Mandatory = $false)]
-    [switch]$WhatIf
+    [string]$OutputPath = "Output"
 )
 
 $ErrorActionPreference = "Stop"
