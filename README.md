@@ -23,10 +23,12 @@ Configuration Blender adds a detection and self-healing layer that runs alongsid
 2. Role team runs `.\Tools\New-ConfigurationRole.ps1` to create folder structure and open the web-based editor
 3. Role team adds checks, exports Config.json and Summary, places both in the role folder
 4. Role team runs `.\Tools\New-IntunePackage.ps1` to create a deployable Intune app
-5. Upload app to Intune using supplied install settings
-6. Assign a group to the app (or to uninstall if removing a role)
-7. Intune pushes the configuration file and assets to the workstation
+5. Upload app to Intune using supplied install settings *
+6. Assign a group to the app (or to uninstall if removing a role) *
+7. Intune pushes the configuration file and assets to the workstation *
 8. Proactive Remediation reads the configuration and enforces it on schedule
+
+*Steps 5-7 are manual until this tool is peer reviewed and approved. Future state: role team uploads revision to a portal and Azure workflows handle packaging, deployment, and assignment automatically.
 
 ---
 
