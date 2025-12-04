@@ -397,9 +397,10 @@ flowchart TD
 3. FAIL if driver missing or version too old
 
 **Remediation:**
-1. `pnputil /add-driver` - adds to driver store (exit code ignored)
-2. `Add-PrinterDriver` - registers with print subsystem
-3. `Get-PrinterDriver` - verifies success (this is the source of truth)
+1. `Get-PrinterDriver` - checks if already installed, skips if exists
+2. `pnputil /add-driver` - adds to driver store (exit code ignored)
+3. `Add-PrinterDriver` - registers with print subsystem
+4. `Get-PrinterDriver` - verifies success (this is the source of truth)
 
 **Important:** Driver name must match exactly what the INF installs. If remediation fails, check the "Available drivers" list in the error message.
 </details>
@@ -430,10 +431,11 @@ flowchart TD
 
 **Remediation:**
 1. Verifies driver exists via `Get-PrinterDriver` (fails if missing)
-2. Stops spooler, clears stuck jobs, restarts spooler
-3. Removes misconfigured printer/port if needed
-4. `Add-PrinterPort` - creates TCP or LPR port
-5. `Add-Printer` - creates printer with driver and port
+2. If printer exists but misconfigured:
+   - Stops spooler, clears stuck jobs, restarts spooler
+   - Removes misconfigured printer/port
+3. `Add-PrinterPort` - creates TCP or LPR port
+4. `Add-Printer` - creates printer with driver and port
 
 **Important:** `DriverInstalled` check must come before `PrinterInstalled` in Config.json.
 </details>
