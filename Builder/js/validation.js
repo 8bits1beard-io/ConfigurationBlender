@@ -197,103 +197,152 @@ function showValidationResults() {
 
 function validateDependencies() {
     const warnings = [];
-    const checkTypes = checks.map(c => c.type);
 
     checks.forEach((check, index) => {
+        if (!check.enabled) return;
+
         switch (check.type) {
             case 'PrinterInstalled':
-                // Check if there's a DriverInstalled check before this one
-                const hasDriverBefore = checks.slice(0, index).some(c => c.type === 'DriverInstalled');
-                if (!hasDriverBefore) {
-                    warnings.push({
-                        message: `"${check.name}" may need a DriverInstalled check before it (printer driver must be installed first)`,
-                        checkIndex: index,
-                        checkName: check.name
-                    });
+                // Check if there's a DriverInstalled check with the SPECIFIC driver name
+                if (check.properties.driverName) {
+                    const driverName = check.properties.driverName.toLowerCase();
+                    const hasMatchingDriver = checks.slice(0, index).some(c =>
+                        c.type === 'DriverInstalled' &&
+                        c.enabled &&
+                        c.properties.driverName?.toLowerCase() === driverName
+                    );
+                    const hasAnyMatchingDriver = checks.some(c =>
+                        c.type === 'DriverInstalled' &&
+                        c.enabled &&
+                        c.properties.driverName?.toLowerCase() === driverName
+                    );
+
+                    if (!hasAnyMatchingDriver) {
+                        warnings.push({
+                            message: `"${check.name}" requires driver "${check.properties.driverName}" but no DriverInstalled check exists for this driver. Add a DriverInstalled check.`,
+                            checkIndex: index,
+                            checkName: check.name,
+                            severity: 'error'
+                        });
+                    } else if (!hasMatchingDriver) {
+                        warnings.push({
+                            message: `"${check.name}" should come AFTER the DriverInstalled check for "${check.properties.driverName}" (drivers must be installed before printers)`,
+                            checkIndex: index,
+                            checkName: check.name,
+                            severity: 'warning'
+                        });
+                    }
                 }
                 break;
+
             case 'ShortcutExists':
-                // Check if a custom icon is specified
+                // Check if a custom icon is specified and deployed
                 if (check.properties.iconLocation) {
                     const iconPath = check.properties.iconLocation.toLowerCase();
-                    // Only validate if iconLocation is not a system path
-                    if (!iconPath.includes('system32') && !iconPath.includes('windows') && !iconPath.includes(',')) {
-                        // Extract the icon filename from the path
+                    // Only validate if iconLocation is not a system path or embedded icon (contains comma)
+                    if (!iconPath.includes('system32') && !iconPath.includes('windows\\') && !iconPath.includes(',')) {
                         const iconFileName = check.properties.iconLocation.split('\\').pop().toLowerCase();
+                        const iconFolder = check.properties.iconLocation.substring(0, check.properties.iconLocation.lastIndexOf('\\')).toLowerCase();
 
-                        // Look for a FilesExist check that deploys this specific icon
+                        // Look for a FilesExist check that deploys this specific icon BEFORE this check
                         const hasIconDeployed = checks.slice(0, index).some(c => {
-                            if (c.type !== 'FilesExist') return false;
+                            if (c.type !== 'FilesExist' || !c.enabled) return false;
 
                             if (c.properties.mode === 'SingleFile') {
-                                // SingleFile mode: check if destinationPath matches the icon location
                                 return c.properties.destinationPath?.toLowerCase() === check.properties.iconLocation.toLowerCase();
                             } else {
                                 // MultipleFiles mode: check if files array contains the icon filename
+                                // AND the destination folder matches
                                 const files = c.properties.files || [];
-                                return files.some(f => f.toLowerCase() === iconFileName);
+                                const destPath = c.properties.destinationPath?.toLowerCase() || '';
+                                return files.some(f => f.toLowerCase() === iconFileName) &&
+                                       destPath === iconFolder;
                             }
                         });
 
-                        if (!hasIconDeployed) {
+                        const hasIconAnyOrder = checks.some(c => {
+                            if (c.type !== 'FilesExist' || !c.enabled) return false;
+                            if (c.properties.mode === 'SingleFile') {
+                                return c.properties.destinationPath?.toLowerCase() === check.properties.iconLocation.toLowerCase();
+                            } else {
+                                const files = c.properties.files || [];
+                                const destPath = c.properties.destinationPath?.toLowerCase() || '';
+                                return files.some(f => f.toLowerCase() === iconFileName) &&
+                                       destPath === iconFolder;
+                            }
+                        });
+
+                        if (!hasIconAnyOrder) {
                             warnings.push({
-                                message: `"${check.name}" uses icon "${iconFileName}" but no FilesExist check deploys this icon file. Add a FilesExist check before this shortcut.`,
+                                message: `"${check.name}" uses custom icon "${iconFileName}" but no FilesExist check deploys this icon. Add a FilesExist check to deploy the icon file.`,
                                 checkIndex: index,
-                                checkName: check.name
+                                checkName: check.name,
+                                severity: 'error'
+                            });
+                        } else if (!hasIconDeployed) {
+                            warnings.push({
+                                message: `"${check.name}" should come AFTER the FilesExist check that deploys "${iconFileName}" (icon must exist before shortcut is created)`,
+                                checkIndex: index,
+                                checkName: check.name,
+                                severity: 'warning'
                             });
                         }
                     }
                 }
                 break;
-            case 'ScheduledTaskExists':
-                // Check if the task references a script that should be deployed first
-                if (check.properties.arguments) {
-                    const scriptMatch = check.properties.arguments.match(/[A-Z]:\\[^\s]+\.ps1/i);
-                    if (scriptMatch) {
-                        const hasScriptBefore = checks.slice(0, index).some(c =>
-                            c.type === 'FilesExist' &&
-                            c.properties.mode === 'SingleFile' &&
-                            scriptMatch[0].toLowerCase().includes(c.properties.destinationPath?.toLowerCase())
-                        );
-                        if (!hasScriptBefore) {
-                            warnings.push({
-                                message: `"${check.name}" (${check.type}) should come AFTER a FilesExist check to deploy the script`,
-                                checkIndex: index,
-                                checkName: check.name
-                            });
-                        }
-                    }
-                }
-                break;
+
+
             case 'AssignedAccess':
-                // AssignedAccess requires a manifest script and scheduled task to rename pinned shortcuts
-                // Check for FilesExist (SingleFile mode) with manifest script
-                const hasManifestScript = checks.some(c =>
-                    c.type === 'FilesExist' &&
-                    c.properties.mode === 'SingleFile' &&
-                    c.properties.sourceAssetPath &&
-                    (c.properties.sourceAssetPath.toLowerCase().includes('manifest') ||
-                     c.properties.sourceAssetPath.toLowerCase().includes('rename'))
+                // AssignedAccess uses startPins which reference shortcuts - verify they exist
+                const startPins = check.properties.startPins || [];
+                startPins.forEach(pin => {
+                    // Convert environment variables to check for shortcut
+                    const pinLower = pin.toLowerCase()
+                        .replace('%allusersprofile%', 'c:\\programdata')
+                        .replace('%programdata%', 'c:\\programdata');
+
+                    // Check if there's a ShortcutExists check for this pin
+                    const hasShortcut = checks.some(c =>
+                        c.type === 'ShortcutExists' &&
+                        c.enabled &&
+                        c.properties.path?.toLowerCase() === pinLower
+                    );
+
+                    if (!hasShortcut && !pinLower.includes('\\windows\\')) {
+                        const shortcutName = pin.split('\\').pop();
+                        warnings.push({
+                            message: `"${check.name}" pins "${shortcutName}" to Start Menu but no ShortcutExists check creates this shortcut. Add a ShortcutExists check.`,
+                            checkIndex: index,
+                            checkName: check.name,
+                            severity: 'warning'
+                        });
+                    }
+                });
+
+                // Check that shortcuts come BEFORE AssignedAccess
+                const shortcutChecks = checks.filter(c => c.type === 'ShortcutExists' && c.enabled);
+                const assignedAccessIndex = index;
+                const shortcutsAfter = shortcutChecks.filter((c, i) =>
+                    checks.indexOf(c) > assignedAccessIndex
                 );
-                // Check for ScheduledTask that runs the manifest script
-                const hasManifestTask = checks.some(c =>
-                    c.type === 'ScheduledTaskExists' &&
-                    c.properties.arguments &&
-                    (c.properties.arguments.toLowerCase().includes('manifest') ||
-                     c.properties.arguments.toLowerCase().includes('rename'))
-                );
-                if (!hasManifestScript) {
+                if (shortcutsAfter.length > 0) {
                     warnings.push({
-                        message: `"${check.name}" requires a FilesExist check (SingleFile mode) to deploy the manifest rename script (renames pinned Edge shortcuts in Start Menu)`,
+                        message: `"${check.name}" should come AFTER all ShortcutExists checks (shortcuts must exist before AssignedAccess configures them)`,
                         checkIndex: index,
-                        checkName: check.name
+                        checkName: check.name,
+                        severity: 'warning'
                     });
                 }
-                if (!hasManifestTask) {
+                break;
+
+            case 'FilesExist':
+                // For MultipleFiles mode, warn if sourceAssetPath is empty
+                if (check.properties.mode !== 'SingleFile' && !check.properties.sourceAssetPath) {
                     warnings.push({
-                        message: `"${check.name}" requires a ScheduledTaskExists check to run the manifest rename script at logon`,
+                        message: `"${check.name}" has no sourceAssetPath specified. Files won't be copied from Assets folder during remediation.`,
                         checkIndex: index,
-                        checkName: check.name
+                        checkName: check.name,
+                        severity: 'warning'
                     });
                 }
                 break;
@@ -314,15 +363,38 @@ function showDependencyWarnings() {
     if (!container) return;
 
     if (warnings.length > 0) {
-        let html = `<div class="dependency-warnings" role="region" aria-label="Dependency warnings">`;
-        html += `<details>`;
-        html += `<summary>Dependency Suggestions (${warnings.length})</summary>`;
-        html += `<ul class="validation-list">`;
-        warnings.forEach(w => {
-            html += `<li>${escapeHtml(w.message)}</li>`;
-        });
-        html += `</ul></details></div>`;
+        const errors = warnings.filter(w => w.severity === 'error');
+        const warns = warnings.filter(w => w.severity !== 'error');
+
+        let html = '';
+
+        if (errors.length > 0) {
+            html += `<div class="dependency-errors" role="alert" aria-live="assertive">`;
+            html += `<strong>Missing Dependencies (${errors.length}):</strong>`;
+            html += `<ul class="validation-list">`;
+            errors.forEach(e => {
+                html += `<li class="dep-error">${escapeHtml(e.message)}</li>`;
+            });
+            html += `</ul></div>`;
+        }
+
+        if (warns.length > 0) {
+            html += `<div class="dependency-warnings" role="region" aria-label="Dependency warnings">`;
+            html += `<details ${errors.length === 0 ? 'open' : ''}>`;
+            html += `<summary>Order Suggestions (${warns.length})</summary>`;
+            html += `<ul class="validation-list">`;
+            warns.forEach(w => {
+                html += `<li class="dep-warning">${escapeHtml(w.message)}</li>`;
+            });
+            html += `</ul></details></div>`;
+        }
+
         container.innerHTML = html;
+
+        // Announce if there are critical errors
+        if (errors.length > 0 && typeof announceError === 'function') {
+            announceError(`${errors.length} missing dependency${errors.length === 1 ? '' : 'ies'} found`);
+        }
     } else {
         container.innerHTML = '';
     }

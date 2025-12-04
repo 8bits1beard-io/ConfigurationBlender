@@ -9,12 +9,6 @@ let editingCheckIndex = -1;
 let hasUnsavedChanges = false;
 let draggedIndex = null;
 
-// Check dependencies - which check types should come before others
-const checkDependencies = {
-    'PrinterInstalled': ['DriverInstalled'],
-    'ShortcutExists': ['FilesExist', 'ApplicationInstalled'],
-    'AssignedAccess': ['ShortcutExists']
-};
 
 // ============================================================================
 // Initialization
@@ -451,37 +445,9 @@ function handleDragEnd(e) {
 // ============================================================================
 
 function checkDependencyWarnings() {
-    const warningsContainer = document.getElementById('dependencyWarnings');
-    const warnings = [];
-
-    checks.forEach((check, index) => {
-        if (!check.enabled) return;
-
-        const deps = checkDependencies[check.type];
-        if (!deps) return;
-
-        deps.forEach(depType => {
-            const depIndex = checks.findIndex((c, i) => i < index && c.type === depType && c.enabled);
-            const hasDepAnywhere = checks.some((c, i) => c.type === depType && c.enabled);
-
-            if (hasDepAnywhere && depIndex === -1) {
-                warnings.push(`"${check.name}" (${check.type}) should come AFTER a ${depType} check`);
-            } else if (!hasDepAnywhere && depType === 'DriverInstalled' && check.type === 'PrinterInstalled') {
-                warnings.push(`"${check.name}" may need a DriverInstalled check before it (printer driver must be installed first)`);
-            }
-        });
-    });
-
-    if (warnings.length > 0) {
-        warningsContainer.innerHTML = warnings.map(w =>
-            `<div class="dependency-warning" role="alert">${escapeHtml(w)}</div>`
-        ).join('');
-
-        if (typeof announceWarning === 'function') {
-            announceWarning(`${warnings.length} dependency warning${warnings.length > 1 ? 's' : ''}`);
-        }
-    } else {
-        warningsContainer.innerHTML = '';
+    // Use the detailed validation from validation.js
+    if (typeof showDependencyWarnings === 'function') {
+        showDependencyWarnings();
     }
 }
 
