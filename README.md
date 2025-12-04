@@ -1,196 +1,74 @@
 # Configuration Blender
 
-> **Self-Healing Configuration Management for Windows Endpoints**
->
-> *Named in honor of [June Blender](https://github.com/juneb), whose PowerShell documentation made DSC accessible to IT professionals worldwide.*
-
-[![PowerShell](https://img.shields.io/badge/PowerShell-5.1%2B-blue.svg)](https://github.com/PowerShell/PowerShell)
-[![Platform](https://img.shields.io/badge/Platform-Windows%2010%2F11-brightgreen.svg)](https://www.microsoft.com/windows)
-
-**Developed by:** Joshua Walderbach
+**Self-Healing Configuration Management for Windows Endpoints**
 
 ---
 
-## What is Configuration Blender?
+## Executive Summary
 
-Configuration Blender is an enterprise configuration management tool that eliminates configuration drift across Windows workstations. It combines the power of PowerShell DSC with the simplicity of a visual interface and the reach of Microsoft Intune.
+Configuration Blender enables **role-owning teams to fully own their workstation configurations** without requiring PowerShell expertise or direct access to deployment infrastructure.
 
-### The Problem
-- Devices drift from desired state (users change settings, techs make manual fixes)
-- Help desk tickets for "my computer is different"
-- Security risks from unauthorized changes
-- Technicians spend hours manually reconfiguring devices
-
-### The Solution
-- **Visual configuration builder** - No PowerShell knowledge required
-- **Automatic drift detection** - Checks compliance on schedule (configurable)
-- **Self-healing** - Fixes issues automatically (schedule-based)
-- **Comprehensive logging** - Full audit trail of all changes
-- **Role-based** - Different configs for kiosks, workstations, etc.
+| Responsibility | Owner |
+|----------------|-------|
+| Configuration definition & changes | Role-owning teams |
+| Change control & approval process | Role-owning teams |
+| CI/CD pipeline & Intune deployment | Windows Engineering |
+| Detection & remediation engine | Windows Engineering |
 
 ---
 
-## Key Features
+## Problem Statement
 
-### Visual Configuration Builder
-Create complex configurations through a simple web interface - no coding required.
-
-### Role-Agnostic Engine
-**One** Proactive Remediation policy manages **all** roles (US_CBL, US_DVR, CA_MPC, etc.). Traditional tools require separate policies for each role.
-
-### Rapid Deployment
-- Create config: **5 minutes**
-- Deploy to Intune: **10 minutes**
-- Enforce on 1000s of devices: **Automatic**
-
-### Enterprise-Ready
-- Runs as SYSTEM (full privileges)
-- Tamper-resistant (managed by Intune)
-- Detailed JSON logs for compliance audits
-- Version control and rollback support
-
-### 16 Check Types
-| Type | Example |
-|------|---------|
-| `Application` | Install Git or remove unwanted browsers |
-| `RegistryValue` | Windows 11 Start Menu alignment |
-| `ShortcutExists` | Employee portal shortcuts |
-| `ShortcutsAllowList` | Kiosk desktop control |
-| `ScheduledTaskExists` | Daily 3 AM restart for updates |
-| `AssignedAccess` | Kiosk mode enforcement |
-| `FolderEmpty` | Desktop cleanup |
-| `FolderExists` | Ensure folders exist with optional file count |
-| `FilesExist` | Deploy files (single or multiple) |
-| `ServiceRunning` | Ensure Print Spooler is running |
-| `PrinterInstalled` | Deploy network printers |
-| `DriverInstalled` | Install device drivers |
-| `WindowsFeature` | Enable/disable optional features |
-| `FirewallRule` | Block telemetry traffic |
-| `CertificateInstalled` | Deploy certificates with expiration monitoring |
-| `NetworkAdapterConfiguration` | Configure static IPs for dual-NIC setups |
-
-### Real-Time Validation
-The Builder includes intelligent validation that automatically checks for:
-- **HKCU:\\ usage warning** - Alerts when RegistryValue uses HKCU:\\ (SYSTEM context issue)
-- **Duplicate check IDs** - Prevents ID conflicts
-- **Required field validation** - Ensures all mandatory fields are filled
-- **Asset path suggestions** - Warns if paths don't follow conventions
+- **Configuration drift** — Devices deviate from standards due to manual changes, user modifications, or inconsistent deployments
+- **Ownership gaps** — Role-specific requirements are known by business teams but implemented by central IT, creating bottlenecks
+- **Manual remediation** — Technicians spend hours reconfiguring devices that have drifted from desired state
+- **Audit challenges** — No centralized record of what configurations should exist vs. what actually exists
 
 ---
 
-## How It Works
+## Solution
+
+Configuration Blender separates **what** (configuration definition) from **how** (deployment and enforcement):
+
+1. **Role teams** define desired state using a visual builder — no scripting required
+2. **Windows Engineering** packages and deploys configurations via Intune
+3. **Proactive Remediation** automatically detects drift and self-heals on schedule
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                    Three-Stage Pipeline                          │
-└─────────────────────────────────────────────────────────────────┘
-
-1. CREATE (Engineer)                    WebUI Builder
-   ┌──────────────────┐                 ┌─────────────┐
-   │ No Code Required │  ────────────>  │ Config.json │
-   │ Visual Interface │                 │ + Assets    │
-   └──────────────────┘                 └─────────────┘
-                                               │
-2. DEPLOY (Intune)                              │
-   ┌──────────────────┐                         │
-   │   Win32 App      │  <──────────────────────┘
-   │  (Per Role)      │  Deploys to C:\ProgramData\ConfigurationBlender\
-   └──────────────────┘
-               │
-3. ENFORCE (Automatic)
-   ┌──────────────────┐
-   │ Proactive        │  Runs on schedule on ALL devices
-   │ Remediation      │  Detects drift → Auto-fixes
-   └──────────────────┘
-        │
-        ▼
-   ┌──────────────────┐
-   │  Self-Healing    │  Device maintains desired state
-   │  Device          │  No manual intervention
-   └──────────────────┘
+Role Team                    Windows Engineering              Endpoints
+───────────                  ───────────────────              ─────────
+Config.json  ──────────────► Intune Win32 App ──────────────► Deploy
+                             Proactive Remediation ─────────► Detect & Fix
 ```
 
 ---
 
-## Installation
+## Key Capabilities
 
-### Get the Code
-
-**Option 1: Clone with Git (Recommended)**
-```powershell
-# Clone the repository
-git clone https://github.com/YOUR_ORG/ConfigurationBlender.git
-cd ConfigurationBlender
-```
-
-**Option 2: Download ZIP**
-1. Go to: `https://github.com/YOUR_ORG/ConfigurationBlender`
-2. Click **Code** → **Download ZIP**
-3. Extract to your preferred location
-
-### Download External Tools
-
-```powershell
-# Download IntuneWinAppUtil.exe (one-time setup)
-Invoke-WebRequest -Uri "https://github.com/microsoft/Microsoft-Win32-Content-Prep-Tool/releases/latest/download/IntuneWinAppUtil.exe" `
-                  -OutFile ".\Tools\IntuneWinAppUtil.exe"
-```
+| Capability | Description |
+|------------|-------------|
+| Visual Configuration Builder | Browser-based UI for defining configurations without code |
+| 16 Check Types | Applications, registry, shortcuts, printers, drivers, scheduled tasks, kiosk mode, firewall rules, certificates, and more |
+| Self-Healing | Automatic remediation when drift is detected |
+| Role-Agnostic Engine | Single Proactive Remediation policy supports all roles |
+| Audit Logging | JSON logs for compliance and troubleshooting |
+| Dependency Validation | Builder warns when checks require prerequisites |
 
 ---
 
-## Quick Start
+## Ownership Model
 
-**Prerequisites:** Repository cloned locally, IntuneWinAppUtil.exe downloaded to `Tools/`
+### Role-Owning Teams
+- Define and maintain `Config.json` for their role
+- Add/modify checks as business requirements change
+- Follow their own change control process for configuration updates
+- Own the `Configurations/[ROLE]/` folder and its contents
 
-1. **Create role structure:**
-   ```powershell
-   # Automated setup (creates folders and opens WebUI)
-   .\Tools\New-ConfigurationRole.ps1 -Role "YOUR_ROLE"
-
-   # Build your configuration in the WebUI, export as Config.json
-   ```
-
-2. **Test locally:**
-   ```powershell
-   # Copy to test location
-   Copy-Item Config.json "C:\ProgramData\ConfigurationBlender\"
-
-   # Run detection
-   .\ProactiveRemediation\Detect.ps1
-
-   # Run remediation
-   .\ProactiveRemediation\Remediate.ps1
-   ```
-
-3. **Package for Intune:**
-   ```powershell
-   # Automated packaging (recommended)
-   .\Tools\New-IntunePackage.ps1
-
-   # Or package specific role directly
-   .\Tools\New-IntunePackage.ps1 -Role "YOUR_ROLE"
-   ```
-
-4. **Deploy** - Upload `.intunewin` to Intune as Win32 app (script provides detailed instructions)
-
----
-
-## Updating Configurations
-
-**CRITICAL:** When you change Config.json or Assets, you MUST create a new package and deploy it!
-
-### The Update Workflow
-
-1. **Make changes** to Config.json or Assets
-2. **Bump version** in Config.json: `1.0.0` → `1.1.0`
-3. **Repackage** (detection script updated automatically):
-   ```powershell
-   .\Tools\New-IntunePackage.ps1 -Role "YOUR_ROLE"
-   ```
-4. **Upload to Intune** as a **new** Win32 app
-5. **Supersede the old version** in Intune (or remove old app's assignments)
-
-**Why?** The Proactive Remediation reads `Config.json` from the device. Changes only take effect when the Win32 app deploys the new file!
+### Windows Engineering
+- Maintains the Configuration Blender engine (`Engine/Detect.ps1`, `Engine/Remediate.ps1`)
+- Manages the Intune deployment pipeline
+- Packages role configurations into Win32 apps
+- Operates the Proactive Remediation policy
 
 ---
 
@@ -198,126 +76,34 @@ Invoke-WebRequest -Uri "https://github.com/microsoft/Microsoft-Win32-Content-Pre
 
 ```
 ConfigurationBlender/
-├── README.md                              # This file - project overview
-│
-├── Builder/
-│   └── ConfigurationBlender.html          # Visual configuration builder
-│
-├── Configurations/                        # Role-specific configs
-│   ├── US_CBL/                            # Example: US CBL kiosks
-│   │   ├── Config.json
-│   │   └── Assets/
-│   │       ├── Icons/
-│   │       ├── Drivers/
-│   │       └── Scripts/
-│   └── [YOUR_ROLE]/                       # Create your own
-│
-├── Packaging/                             # Win32 App deployment scripts
-│   ├── Install.ps1                        # Deploys config to devices
-│   └── Detect.ps1                         # Intune detection logic
-│
-├── ProactiveRemediation/                  # Intune Proactive Remediation scripts
-│   ├── Detect.ps1                         # Compliance checking
-│   └── Remediate.ps1                      # Auto-fix logic
-│
-└── Tools/                                 # Development and packaging tools
-    ├── New-ConfigurationRole.ps1          # Creates role folder structure
-    ├── New-IntunePackage.ps1              # Packages roles for Intune
-    └── IntuneWinAppUtil.exe               # Microsoft packaging tool (download separately)
+├── Builder/                    # Visual configuration builder (HTML/JS)
+├── Configurations/             # Role-specific configurations
+│   └── [ROLE]/
+│       ├── Config.json         # Role configuration (owned by role team)
+│       └── Assets/             # Icons, drivers, scripts for this role
+├── Engine/                     # Detection and remediation scripts
+├── Packaging/                  # Intune Win32 app scripts
+└── Tools/                      # Packaging and setup utilities
 ```
 
 ---
 
-## Execution Context: SYSTEM User
+## Workflow
 
-**CRITICAL:** Both Win32 App installation and Proactive Remediation scripts run as **NT AUTHORITY\SYSTEM** in Intune. This affects how checks behave:
-
-### SYSTEM Context Implications:
-
-| Item | SYSTEM Behavior | Solution |
-|------|----------------|----------|
-| `HKCU:\` registry | Modifies SYSTEM's hive, not user's | Use `HKLM:\` for system-wide settings |
-| `$env:USERPROFILE` | `C:\Windows\System32\config\systemprofile\` | Use explicit paths like `C:\Users\Public\` |
-| `$env:TEMP` | `C:\Windows\Temp` | Be aware for temp file operations |
-| User desktop shortcuts | Can access but need explicit username | Use `C:\Users\Public\Desktop\` for all users |
-
-### Example: Wrong vs Right
-
-**Don't do this (won't work):**
-```json
-{
-  "type": "RegistryValue",
-  "properties": {
-    "path": "HKCU:\\Software\\...",
-    "name": "Setting",
-    "value": "Value"
-  }
-}
-```
-
-**Do this instead (use HKLM for system-wide settings):**
-```json
-{
-  "type": "RegistryValue",
-  "properties": {
-    "path": "HKLM:\\SOFTWARE\\Policies\\...",
-    "name": "Setting",
-    "value": "Value",
-    "type": "String"
-  }
-}
-```
-
-**Testing as SYSTEM:** Use PsExec to replicate production environment:
-```powershell
-psexec -i -s powershell.exe -ExecutionPolicy Bypass -File "C:\...\Detect.ps1"
-```
+1. **Role team** opens the Builder and defines/modifies their configuration
+2. **Role team** exports `Config.json` and commits to their role folder
+3. **Role team** submits change request per their change control process
+4. **Windows Engineering** packages the configuration and deploys via Intune
+5. **Proactive Remediation** enforces the configuration on all assigned devices
 
 ---
 
-## Troubleshooting
+## Technical Notes
 
-### Common Issues
-
-**Win32 app install failing: "Configuration file not found"**
-- Config file MUST be named exactly `Config.json` (capital C)
-- Common mistakes: `config.json`, `config_RoleName.json`, `RoleName.json`
-
-**Registry changes not applying to users**
-- You're probably using `RegistryValue` with `HKCU:\` - this modifies SYSTEM's registry
-- Solution: Use `HKLM:\` for system-wide policy settings instead
-
-**AssignedAccess check failing during local testing**
-- Expected when running as regular user
-- Use PsExec to test as SYSTEM: `psexec -i -s powershell.exe ...`
-- In production, Intune runs as SYSTEM automatically
-
-### Logs
-All operations log to: `C:\ProgramData\ConfigurationBlender\Logs\`
+- Runs as `NT AUTHORITY\SYSTEM` — use `HKLM:\` for registry, `C:\Users\Public\` for shared files
+- One configuration per device — role assignment determines which config is deployed
+- Logs written to `C:\ProgramData\ConfigurationBlender\Logs\`
 
 ---
 
-## Contributing
-
-### Adding New Check Types
-
-1. Add form UI in `Builder/ConfigurationBlender.html` (`getPropertiesFormForType()`)
-2. Add detection logic: `Test-[CheckType]` function in `ProactiveRemediation/Detect.ps1`
-3. Add remediation logic: `Repair-[CheckType]` function in `ProactiveRemediation/Remediate.ps1`
-4. Update switch statements in both ProactiveRemediation scripts
-
----
-
-## Credits
-
-### Author
-**Joshua Walderbach**
-
-### Dedication
-Named in honor of **June Blender** ([@juneb](https://github.com/juneb)), whose work as Senior Content Developer at Microsoft made PowerShell and Desired State Configuration accessible to IT professionals worldwide. Her clear, comprehensive documentation inspired this tool's focus on usability and thorough documentation.
-
----
-
-## License
-
-MIT License - See LICENSE file for details.
+**Developed by:** Joshua Walderbach, Windows Engineering
