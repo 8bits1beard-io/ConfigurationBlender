@@ -120,17 +120,38 @@ function validateConfiguration() {
                         });
                     }
 
-                    // Require static IP when using subnet identification (the whole point is DHCP-to-static)
-                    if (!check.properties.staticIPAddress) {
+                    // Require static IP or range when using subnet identification (the whole point is DHCP-to-static)
+                    if (!check.properties.staticIPAddress && !check.properties.staticIPRange) {
                         errors.push({
-                            message: `Check "${check.name}": staticIPAddress is required when using subnet-based identification`,
+                            message: `Check "${check.name}": staticIPAddress or staticIPRange is required when using subnet-based identification`,
                             checkIndex: index,
                             checkName: check.name
                         });
                     }
                 }
 
-                if (check.properties.staticIPAddress && !check.properties.subnetPrefixLength) {
+                // Validate IP range format
+                if (check.properties.staticIPRange) {
+                    const rangeParts = check.properties.staticIPRange.split('-');
+                    if (rangeParts.length !== 2) {
+                        errors.push({
+                            message: `Check "${check.name}": staticIPRange must be in format "startIP-endIP" (e.g., 192.168.20.1-192.168.20.20)`,
+                            checkIndex: index,
+                            checkName: check.name
+                        });
+                    } else {
+                        const ipRegex = /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
+                        if (!ipRegex.test(rangeParts[0].trim()) || !ipRegex.test(rangeParts[1].trim())) {
+                            errors.push({
+                                message: `Check "${check.name}": staticIPRange contains invalid IP addresses`,
+                                checkIndex: index,
+                                checkName: check.name
+                            });
+                        }
+                    }
+                }
+
+                if ((check.properties.staticIPAddress || check.properties.staticIPRange) && !check.properties.subnetPrefixLength) {
                     warnings.push({
                         message: `Check "${check.name}": Static IP configured without subnet prefix length (will default to /24)`,
                         checkIndex: index,
@@ -139,7 +160,7 @@ function validateConfiguration() {
                 }
 
                 // Warn about isolated network configuration
-                if (hasSubnetId && check.properties.staticIPAddress) {
+                if (hasSubnetId && (check.properties.staticIPAddress || check.properties.staticIPRange)) {
                     if (check.properties.defaultGateway) {
                         warnings.push({
                             message: `Check "${check.name}": Gateway is set for a subnet-identified adapter. For isolated equipment networks, leave gateway empty to prevent routing issues.`,

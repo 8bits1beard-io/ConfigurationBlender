@@ -210,7 +210,7 @@ graph LR
 | `RegistryValue` | Set registry values | `path`, `name`, `value`, `type` |
 | `DriverInstalled` | Install device drivers | `driverName`, `driverClass`, `sourceAssetPath`, `minimumVersion` |
 | `PrinterInstalled` | Configure network printers | `printerName`, `driverName`, `printerIP`, `portName`, `portType` |
-| `NetworkAdapterConfiguration` | Configure network adapters (DHCP to static) | `identifyByCurrentSubnet`, `excludeSubnets`, `staticIPAddress`, `dnsServers` |
+| `NetworkAdapterConfiguration` | Configure network adapters (DHCP to static) | `identifyByCurrentSubnet`, `excludeSubnets`, `staticIPAddress` or `staticIPRange`, `dnsServers` |
 | `ServiceRunning` | Ensure services are running | `serviceName`, `startupType`, `ensureRunning` |
 | `ScheduledTaskExists` | Create scheduled tasks | `taskName`, `execute`, `arguments`, `trigger`, `principal` |
 | `WindowsFeature` | Enable/disable Windows features | `featureName`, `state` |
@@ -413,7 +413,7 @@ flowchart TD
 </details>
 
 <details>
-<summary><strong>NetworkAdapterConfiguration (Subnet-based DHCP to Static)</strong></summary>
+<summary><strong>NetworkAdapterConfiguration (Subnet-based DHCP to Static - Single IP)</strong></summary>
 
 Use this mode when devices have dual NICs and you need to convert a private equipment network from DHCP to static IP while protecting the corporate network.
 
@@ -438,6 +438,7 @@ Use this mode when devices have dual NICs and you need to convert a private equi
 **Key Properties:**
 - `identifyByCurrentSubnet`: Find wired adapter with IP in this range (CIDR notation)
 - `excludeSubnets`: Never modify adapters in these subnets (corporate protection)
+- `staticIPAddress`: Exact static IP to assign (use for single-device scenarios)
 - `defaultGateway`: Empty = no gateway (isolates network from routing)
 - `dnsServers`: Empty array = clear DNS (prevents DNS conflicts)
 - `registerInDns`: `false` = don't register in DNS
@@ -448,6 +449,72 @@ Use this mode when devices have dual NICs and you need to convert a private equi
 2. Adapters with gateway outside target subnet are skipped
 3. Virtual adapters are ignored
 4. Excluded subnets are never touched
+</details>
+
+<details>
+<summary><strong>NetworkAdapterConfiguration (Dual-NIC DHCP to Static - IP Range)</strong></summary>
+
+Use this mode when **multiple devices** at the same location have dual NICs and need unique static IPs on the private network. The check only applies to devices with 2+ active wired connections.
+
+```json
+{
+  "type": "NetworkAdapterConfiguration",
+  "name": "Private Equipment Network (Multi-Device)",
+  "properties": {
+    "staticIPRange": "192.168.20.1-192.168.20.20",
+    "subnetPrefixLength": 24,
+    "defaultGateway": "",
+    "dnsServers": [],
+    "registerInDns": false,
+    "interfaceMetric": 9999,
+    "networkCategory": "Private"
+  }
+}
+```
+
+**How IP Range Mode Works:**
+
+1. **Detection** (3 conditions must be true for FAIL):
+   - Device has **2+ active wired connections**
+   - One adapter has a **DHCP-assigned IP** in the specified range
+   - That adapter needs to be converted to static
+
+   If device has <2 wired adapters → **PASS** (check doesn't apply)
+   If adapter in range is already static → **PASS** (already compliant)
+   If adapter in range is DHCP → **FAIL** (needs remediation)
+
+2. **Remediation**:
+   - Finds the adapter with DHCP IP in the range
+   - Performs ping sweep to find an unused IP in the range
+   - Converts adapter from DHCP to static with the available IP
+   - Applies additional settings (DNS, metric, category, etc.)
+
+**Key Properties:**
+- `staticIPRange`: IP range in format `startIP-endIP` (e.g., `192.168.20.1-192.168.20.20`)
+- Use **either** `staticIPAddress` or `staticIPRange`, not both
+
+**Example Scenario:**
+A site has 5 kiosk devices, each with:
+- NIC 1: Corporate network (10.x.x.x via DHCP) - untouched
+- NIC 2: Private equipment network (192.168.20.x via DHCP) - needs static
+
+Device 1 remediation:
+1. Detects NIC 2 has DHCP IP 192.168.20.50 (in range)
+2. Pings 192.168.20.1 - no response
+3. Assigns 192.168.20.1 as static to NIC 2
+
+Device 2 remediation:
+1. Detects NIC 2 has DHCP IP 192.168.20.51 (in range)
+2. Pings 192.168.20.1 - **responds** (Device 1 has it)
+3. Pings 192.168.20.2 - no response
+4. Assigns 192.168.20.2 as static to NIC 2
+
+**Built-in Safeguards:**
+1. Only applies to devices with 2+ active wired adapters
+2. Only modifies adapters with DHCP IP in the specified range
+3. Corporate NICs (outside range) are never touched
+4. Ping sweep has 1-second timeout per IP
+5. Remediation fails cleanly if no IPs are available
 </details>
 
 <details>

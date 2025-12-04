@@ -1010,18 +1010,85 @@ function Test-NetworkAdapterConfiguration {
             $adapterIP = Get-NetIPAddress -InterfaceIndex $adapterIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue | Select-Object -First 1
         }
 
-        # Check static IP configuration
+        # Check static IP configuration - supports both single IP and IP range
         if ($Properties.staticIPAddress) {
+            # Single IP mode - exact match required with DHCP disabled
             if ($null -eq $adapterIP) {
                 $issues += "No IPv4 address configured"
-            } elseif ($adapterIP.IPAddress -ne $Properties.staticIPAddress) {
-                $issues += "IP address mismatch: expected '$($Properties.staticIPAddress)', found '$($adapterIP.IPAddress)'"
+            } else {
+                $dhcpStatus = (Get-NetIPInterface -InterfaceIndex $adapterIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue).Dhcp
+                if ($dhcpStatus -eq "Enabled") {
+                    $issues += "DHCP is enabled but static IP is required"
+                } elseif ($adapterIP.IPAddress -ne $Properties.staticIPAddress) {
+                    $issues += "IP address mismatch: expected '$($Properties.staticIPAddress)', found '$($adapterIP.IPAddress)'"
+                }
             }
+        } elseif ($Properties.staticIPRange) {
+            # IP range mode - different logic:
+            # Check if device has 2+ wired adapters AND one has DHCP IP in the range
+            # If so, that adapter needs to be converted to static
 
-            # Check if DHCP is disabled (should be for static IP)
-            $dhcpStatus = (Get-NetIPInterface -InterfaceIndex $adapterIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue).Dhcp
-            if ($dhcpStatus -eq "Enabled") {
-                $issues += "DHCP is enabled but static IP is configured"
+            $rangeParts = $Properties.staticIPRange -split '-'
+            if ($rangeParts.Count -ne 2) {
+                $issues += "Invalid staticIPRange format: '$($Properties.staticIPRange)' (expected 'startIP-endIP')"
+            } else {
+                $startIP = $rangeParts[0].Trim()
+                $endIP = $rangeParts[1].Trim()
+
+                try {
+                    $startBytes = [System.Net.IPAddress]::Parse($startIP).GetAddressBytes()
+                    $endBytes = [System.Net.IPAddress]::Parse($endIP).GetAddressBytes()
+                    [Array]::Reverse($startBytes)
+                    [Array]::Reverse($endBytes)
+                    $startInt = [BitConverter]::ToUInt32($startBytes, 0)
+                    $endInt = [BitConverter]::ToUInt32($endBytes, 0)
+
+                    # Get all active wired adapters
+                    $wiredAdapters = Get-NetAdapter | Where-Object {
+                        $_.Status -eq "Up" -and
+                        $_.PhysicalMediaType -eq "802.3" -and
+                        $_.Virtual -eq $false
+                    }
+
+                    # Check: Does device have 2+ active wired connections?
+                    if ($wiredAdapters.Count -lt 2) {
+                        # Less than 2 wired adapters - this check doesn't apply, pass
+                        # (No private network scenario)
+                    } else {
+                        # Check each adapter for DHCP IP in the range
+                        $foundDhcpInRange = $false
+                        $foundStaticInRange = $false
+
+                        foreach ($wiredAdapter in $wiredAdapters) {
+                            $wiredIP = Get-NetIPAddress -InterfaceIndex $wiredAdapter.ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+                                Where-Object { $_.AddressState -eq "Preferred" } | Select-Object -First 1
+
+                            if ($wiredIP) {
+                                # Check if IP is in range
+                                $wiredBytes = [System.Net.IPAddress]::Parse($wiredIP.IPAddress).GetAddressBytes()
+                                [Array]::Reverse($wiredBytes)
+                                $wiredInt = [BitConverter]::ToUInt32($wiredBytes, 0)
+
+                                if ($wiredInt -ge $startInt -and $wiredInt -le $endInt) {
+                                    # IP is in range - check if DHCP or static
+                                    $dhcpStatus = (Get-NetIPInterface -InterfaceIndex $wiredAdapter.ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue).Dhcp
+
+                                    if ($dhcpStatus -eq "Enabled") {
+                                        $foundDhcpInRange = $true
+                                        $issues += "Adapter '$($wiredAdapter.Name)' has DHCP IP '$($wiredIP.IPAddress)' in range '$($Properties.staticIPRange)' - needs static assignment"
+                                    } else {
+                                        $foundStaticInRange = $true
+                                    }
+                                }
+                            }
+                        }
+
+                        # If we found a static IP in range and no DHCP in range, we're compliant
+                        # If we found DHCP in range, we already added the issue above
+                    }
+                } catch {
+                    $issues += "Failed to evaluate IP range: $($_.Exception.Message)"
+                }
             }
         }
 

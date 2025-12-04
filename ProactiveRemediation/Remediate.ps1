@@ -1224,8 +1224,12 @@ function Repair-NetworkAdapterConfiguration {
             Start-Sleep -Seconds 2  # Give adapter time to initialize
         }
 
-        # Configure static IP if specified
+        # Configure static IP if specified (single IP or IP range)
         if ($Properties.staticIPAddress) {
+            # Single IP mode - use exact IP on the identified adapter
+            $targetIP = $Properties.staticIPAddress
+            $prefixLength = if ($Properties.subnetPrefixLength) { $Properties.subnetPrefixLength } else { 24 }
+
             # Remove existing IP configuration
             $existingIP = Get-NetIPAddress -InterfaceIndex $adapterIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue
             if ($existingIP) {
@@ -1238,12 +1242,9 @@ function Repair-NetworkAdapterConfiguration {
                 Remove-NetRoute -InterfaceIndex $adapterIndex -AddressFamily IPv4 -DestinationPrefix "0.0.0.0/0" -Confirm:$false -ErrorAction SilentlyContinue
             }
 
-            # Set static IP address
-            $prefixLength = if ($Properties.subnetPrefixLength) { $Properties.subnetPrefixLength } else { 24 }
-
             $newIPParams = @{
                 InterfaceIndex = $adapterIndex
-                IPAddress = $Properties.staticIPAddress
+                IPAddress = $targetIP
                 PrefixLength = $prefixLength
                 AddressFamily = "IPv4"
             }
@@ -1254,12 +1255,171 @@ function Repair-NetworkAdapterConfiguration {
             }
 
             New-NetIPAddress @newIPParams -ErrorAction Stop | Out-Null
-            $actions += "Set static IP on '$adapterName': $($Properties.staticIPAddress)/$prefixLength"
+            $actions += "Set static IP on '$adapterName': $targetIP/$prefixLength"
 
             if ($Properties.defaultGateway) {
                 $actions += "Set gateway: $($Properties.defaultGateway)"
             } else {
                 $actions += "No gateway configured (isolated network)"
+            }
+        } elseif ($Properties.staticIPRange) {
+            # IP range mode - find adapter with DHCP IP in range and convert to static
+            $rangeParts = $Properties.staticIPRange -split '-'
+            if ($rangeParts.Count -ne 2) {
+                return @{
+                    Success = $false
+                    Action = "Invalid staticIPRange format: '$($Properties.staticIPRange)' (expected 'startIP-endIP')"
+                }
+            }
+
+            $startIP = $rangeParts[0].Trim()
+            $endIP = $rangeParts[1].Trim()
+            $prefixLength = if ($Properties.subnetPrefixLength) { $Properties.subnetPrefixLength } else { 24 }
+
+            try {
+                $startBytes = [System.Net.IPAddress]::Parse($startIP).GetAddressBytes()
+                $endBytes = [System.Net.IPAddress]::Parse($endIP).GetAddressBytes()
+                [Array]::Reverse($startBytes)
+                [Array]::Reverse($endBytes)
+                $startInt = [BitConverter]::ToUInt32($startBytes, 0)
+                $endInt = [BitConverter]::ToUInt32($endBytes, 0)
+
+                # Get all active wired adapters
+                $wiredAdapters = Get-NetAdapter | Where-Object {
+                    $_.Status -eq "Up" -and
+                    $_.PhysicalMediaType -eq "802.3" -and
+                    $_.Virtual -eq $false
+                }
+
+                # Must have 2+ wired adapters for this check to apply
+                if ($wiredAdapters.Count -lt 2) {
+                    $actions += "Less than 2 wired adapters - IP range check does not apply"
+                } else {
+                    # Find the adapter with DHCP IP in the range
+                    $targetAdapter = $null
+                    $currentDhcpIP = $null
+
+                    foreach ($wiredAdapter in $wiredAdapters) {
+                        $wiredIP = Get-NetIPAddress -InterfaceIndex $wiredAdapter.ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+                            Where-Object { $_.AddressState -eq "Preferred" } | Select-Object -First 1
+
+                        if ($wiredIP) {
+                            $wiredBytes = [System.Net.IPAddress]::Parse($wiredIP.IPAddress).GetAddressBytes()
+                            [Array]::Reverse($wiredBytes)
+                            $wiredInt = [BitConverter]::ToUInt32($wiredBytes, 0)
+
+                            if ($wiredInt -ge $startInt -and $wiredInt -le $endInt) {
+                                $dhcpStatus = (Get-NetIPInterface -InterfaceIndex $wiredAdapter.ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue).Dhcp
+
+                                if ($dhcpStatus -eq "Enabled") {
+                                    $targetAdapter = $wiredAdapter
+                                    $currentDhcpIP = $wiredIP.IPAddress
+                                    break
+                                }
+                            }
+                        }
+                    }
+
+                    if ($null -eq $targetAdapter) {
+                        $actions += "No adapter found with DHCP IP in range - already compliant or not applicable"
+                    } else {
+                        # Ping sweep to find an available IP
+                        $targetIP = $null
+
+                        for ($ipInt = $startInt; $ipInt -le $endInt; $ipInt++) {
+                            $ipBytes = [BitConverter]::GetBytes([uint32]$ipInt)
+                            [Array]::Reverse($ipBytes)
+                            $candidateIP = [System.Net.IPAddress]::new($ipBytes).ToString()
+
+                            # Skip the current DHCP IP (it's ours temporarily)
+                            if ($candidateIP -eq $currentDhcpIP) {
+                                continue
+                            }
+
+                            # Ping the candidate IP
+                            $pingResult = Test-Connection -ComputerName $candidateIP -Count 1 -TimeoutSeconds 1 -ErrorAction SilentlyContinue
+
+                            if (-not $pingResult) {
+                                # No response - IP is available
+                                $targetIP = $candidateIP
+                                break
+                            }
+                        }
+
+                        if ($null -eq $targetIP) {
+                            return @{
+                                Success = $false
+                                Action = "No available IP found in range $($Properties.staticIPRange) - all IPs responded to ping"
+                            }
+                        }
+
+                        # Apply static IP to the target adapter
+                        $targetIndex = $targetAdapter.ifIndex
+                        $targetName = $targetAdapter.Name
+
+                        # Remove existing IP configuration
+                        Remove-NetIPAddress -InterfaceIndex $targetIndex -AddressFamily IPv4 -Confirm:$false -ErrorAction SilentlyContinue
+
+                        # Remove existing gateway
+                        $existingRoute = Get-NetRoute -InterfaceIndex $targetIndex -AddressFamily IPv4 -DestinationPrefix "0.0.0.0/0" -ErrorAction SilentlyContinue
+                        if ($existingRoute) {
+                            Remove-NetRoute -InterfaceIndex $targetIndex -AddressFamily IPv4 -DestinationPrefix "0.0.0.0/0" -Confirm:$false -ErrorAction SilentlyContinue
+                        }
+
+                        $newIPParams = @{
+                            InterfaceIndex = $targetIndex
+                            IPAddress = $targetIP
+                            PrefixLength = $prefixLength
+                            AddressFamily = "IPv4"
+                        }
+
+                        # Only add gateway if explicitly specified and not empty
+                        if ($Properties.PSObject.Properties.Name -contains 'defaultGateway' -and -not [string]::IsNullOrEmpty($Properties.defaultGateway)) {
+                            $newIPParams['DefaultGateway'] = $Properties.defaultGateway
+                        }
+
+                        New-NetIPAddress @newIPParams -ErrorAction Stop | Out-Null
+                        $actions += "Converted '$targetName' from DHCP ($currentDhcpIP) to static IP '$targetIP' from range '$($Properties.staticIPRange)'"
+
+                        if ($Properties.defaultGateway) {
+                            $actions += "Set gateway: $($Properties.defaultGateway)"
+                        } else {
+                            $actions += "No gateway configured (isolated network)"
+                        }
+
+                        # Apply additional settings to the target adapter
+                        if ($Properties.PSObject.Properties.Name -contains 'dnsServers') {
+                            if ($null -eq $Properties.dnsServers -or $Properties.dnsServers.Count -eq 0) {
+                                Set-DnsClientServerAddress -InterfaceIndex $targetIndex -ResetServerAddresses -ErrorAction Stop
+                                $actions += "Cleared DNS servers on '$targetName'"
+                            } else {
+                                Set-DnsClientServerAddress -InterfaceIndex $targetIndex -ServerAddresses $Properties.dnsServers -ErrorAction Stop
+                                $actions += "Set DNS on '$targetName': $($Properties.dnsServers -join ', ')"
+                            }
+                        }
+
+                        if ($Properties.PSObject.Properties.Name -contains 'registerInDns') {
+                            Set-DnsClient -InterfaceIndex $targetIndex -RegisterThisConnectionsAddress $Properties.registerInDns -ErrorAction Stop
+                            $state = if ($Properties.registerInDns) { "enabled" } else { "disabled" }
+                            $actions += "DNS registration $state on '$targetName'"
+                        }
+
+                        if ($Properties.networkCategory) {
+                            Set-NetConnectionProfile -InterfaceIndex $targetIndex -NetworkCategory $Properties.networkCategory -ErrorAction Stop
+                            $actions += "Set network category on '$targetName': $($Properties.networkCategory)"
+                        }
+
+                        if ($Properties.interfaceMetric) {
+                            Set-NetIPInterface -InterfaceIndex $targetIndex -AddressFamily IPv4 -InterfaceMetric $Properties.interfaceMetric -ErrorAction Stop
+                            $actions += "Set interface metric on '$targetName': $($Properties.interfaceMetric)"
+                        }
+                    }
+                }
+            } catch {
+                return @{
+                    Success = $false
+                    Action = "Failed to process IP range: $($_.Exception.Message)"
+                }
             }
         }
 

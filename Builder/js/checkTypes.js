@@ -54,6 +54,23 @@ function toggleNetworkAdapterMode() {
     }
 }
 
+function toggleIPMode() {
+    const mode = document.getElementById('prop_ipMode').value;
+    const singleFields = document.getElementById('singleIPFields');
+    const rangeFields = document.getElementById('rangeIPFields');
+    if (mode === 'range') {
+        singleFields.style.display = 'none';
+        singleFields.setAttribute('aria-hidden', 'true');
+        rangeFields.style.display = 'block';
+        rangeFields.setAttribute('aria-hidden', 'false');
+    } else {
+        singleFields.style.display = 'block';
+        singleFields.setAttribute('aria-hidden', 'false');
+        rangeFields.style.display = 'none';
+        rangeFields.setAttribute('aria-hidden', 'true');
+    }
+}
+
 function toggleFilesExistMode() {
     const mode = document.getElementById('prop_mode').value;
     const multipleFilesGroup = document.getElementById('multipleFilesGroup');
@@ -559,9 +576,25 @@ function getPropertiesFormForType(type) {
                 </fieldset>
                 <fieldset class="property-group" translate="no">
                     <legend>IP Configuration</legend>
-                    ${formGroup('prop_staticIPAddress', 'Static IP Address',
-                        `<input type="text" id="prop_staticIPAddress" placeholder="e.g., 192.168.0.100">`,
-                        'The IP to assign to this adapter', true, true)}
+                    ${formGroup('prop_ipMode', 'IP Assignment Mode',
+                        `<select id="prop_ipMode" onchange="toggleIPMode()">
+                            <option value="single">Single Static IP</option>
+                            <option value="range">IP Range (Multi-Device)</option>
+                        </select>`,
+                        'Range mode: finds unused IP via ping sweep (requires 2+ wired NICs)')}
+                    <div id="singleIPFields">
+                        ${formGroup('prop_staticIPAddress', 'Static IP Address',
+                            `<input type="text" id="prop_staticIPAddress" placeholder="e.g., 192.168.0.100">`,
+                            'The exact IP to assign to this adapter', true, true)}
+                    </div>
+                    <div id="rangeIPFields" style="display: none;">
+                        ${formGroup('prop_staticIPRange', 'Static IP Range',
+                            `<input type="text" id="prop_staticIPRange" placeholder="e.g., 192.168.20.1-192.168.20.20">`,
+                            'Format: startIP-endIP. Ping sweep finds first available.', true, true)}
+                        <div class="info-box">
+                            <strong>Dual-NIC Mode:</strong> Only applies to devices with 2+ wired connections. Finds the adapter with DHCP IP in this range and converts it to static.
+                        </div>
+                    </div>
                     ${formGroup('prop_subnetPrefixLength', 'Subnet Prefix Length',
                         `<input type="number" id="prop_subnetPrefixLength" placeholder="e.g., 24" min="1" max="32">`,
                         '24 = 255.255.255.0, 16 = 255.255.0.0', false, true)}
@@ -638,6 +671,17 @@ function populateCheckProperties(properties) {
             idModeElement.value = 'traditional';
         }
         toggleNetworkAdapterMode();
+    }
+
+    // Handle IP mode toggle (single vs range)
+    const ipModeElement = document.getElementById('prop_ipMode');
+    if (ipModeElement) {
+        if (properties.staticIPRange) {
+            ipModeElement.value = 'range';
+        } else {
+            ipModeElement.value = 'single';
+        }
+        toggleIPMode();
     }
 }
 
@@ -792,9 +836,15 @@ function getCheckProperties() {
                 const macAddr = document.getElementById('prop_macAddress').value;
                 if (macAddr) properties.macAddress = macAddr;
             }
-            // IP Configuration
-            const staticIP = document.getElementById('prop_staticIPAddress').value;
-            if (staticIP) properties.staticIPAddress = staticIP;
+            // IP Configuration - single IP or range mode
+            const ipMode = document.getElementById('prop_ipMode').value;
+            if (ipMode === 'range') {
+                const staticIPRange = document.getElementById('prop_staticIPRange').value;
+                if (staticIPRange) properties.staticIPRange = staticIPRange;
+            } else {
+                const staticIP = document.getElementById('prop_staticIPAddress').value;
+                if (staticIP) properties.staticIPAddress = staticIP;
+            }
             const prefixLen = document.getElementById('prop_subnetPrefixLength').value;
             if (prefixLen) properties.subnetPrefixLength = parseInt(prefixLen);
             // Gateway: empty string means "no gateway" (important for isolated networks)

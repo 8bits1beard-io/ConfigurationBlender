@@ -568,7 +568,12 @@ function generateNetworkAdapterSummary(props) {
     if (isSubnetMode) {
         md += `    A[🔍 Find adapter in ${props.identifyByCurrentSubnet}]\n`;
         md += `    A --> B[🌐 Convert to Static]\n`;
-        md += `    B --> C[IP: ${props.staticIPAddress}/${props.subnetPrefixLength || 24}]\n`;
+        if (props.staticIPRange) {
+            md += `    B --> C[IP Range: ${props.staticIPRange}]\n`;
+            md += `    C --> C1[Ping sweep for available IP]\n`;
+        } else {
+            md += `    B --> C[IP: ${props.staticIPAddress}/${props.subnetPrefixLength || 24}]\n`;
+        }
         if (!props.defaultGateway) {
             md += `    C --> D[No Gateway - Isolated]\n`;
         }
@@ -580,6 +585,8 @@ function generateNetworkAdapterSummary(props) {
         if (props.staticIPAddress) {
             md += `    A --> B[IP: ${props.staticIPAddress}/${props.subnetPrefixLength || 24}]\n`;
             if (props.defaultGateway) md += `    B --> C[Gateway: ${props.defaultGateway}]\n`;
+        } else if (props.staticIPRange) {
+            md += `    A --> B[IP Range: ${props.staticIPRange}]\n`;
         }
         if (props.dnsServers && props.dnsServers.length > 0) {
             md += `    A --> D[DNS: ${props.dnsServers.join(', ')}]\n`;
@@ -613,6 +620,10 @@ function generateNetworkAdapterSummary(props) {
     if (props.staticIPAddress) {
         md += `| Static IP | \`${props.staticIPAddress}\` |\n`;
         md += `| Subnet Prefix | /${props.subnetPrefixLength || 24} |\n`;
+    } else if (props.staticIPRange) {
+        md += `| Static IP Range | \`${props.staticIPRange}\` |\n`;
+        md += `| Subnet Prefix | /${props.subnetPrefixLength || 24} |\n`;
+        md += `| Assignment | Ping sweep for available IP |\n`;
     } else {
         md += `| DHCP | Enabled |\n`;
     }
