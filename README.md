@@ -28,7 +28,7 @@ Configuration Blender adds a detection and self-healing layer that runs alongsid
 7. Intune pushes the configuration file and assets to the workstation *
 8. Proactive Remediation reads the configuration and enforces it on schedule
 
-*Steps 5-7 are manual until this tool is peer reviewed and approved. Future state: role team uploads revision to a portal and Azure workflows handle packaging, deployment, and assignment automatically.
+*Steps 5-7 are manual during initial rollout. This tool is designed for full CI/CD automation. Future state: role team commits changes, Azure workflows handle packaging and deployment automatically. This reduces mean time to remediation, eliminates manual handoffs, and ensures devices return to desired state faster.
 
 ---
 
