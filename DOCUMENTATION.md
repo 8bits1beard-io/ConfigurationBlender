@@ -214,7 +214,7 @@ graph LR
 | `ServiceRunning` | Ensure services are running | `serviceName`, `startupType`, `ensureRunning` |
 | `ScheduledTaskExists` | Create scheduled tasks | `taskName`, `execute`, `arguments`, `trigger`, `principal` |
 | `WindowsFeature` | Enable/disable Windows features | `featureName`, `state` |
-| `AssignedAccess` | Configure kiosk mode | `profileId`, `allowedApps`, `startPins`, `showTaskbar` |
+| `AssignedAccess` | Configure kiosk mode | `configXmlPath` (recommended) or legacy: `profileId`, `allowedApps`, `startPins` |
 | `FirewallRule` | Manage firewall rules | `ruleName`, `direction`, `action`, `protocol`, `remoteAddress` |
 | `CertificateInstalled` | Deploy certificates | `thumbprint`, `subject`, `storeLocation`, `sourceAssetPath` |
 
@@ -475,6 +475,26 @@ Use this mode when you know the adapter name, description, or MAC address.
 <details>
 <summary><strong>AssignedAccess</strong></summary>
 
+Configure Windows 11 multi-app kiosk mode. The recommended approach uses an external XML configuration file:
+
+**Recommended: XML-based configuration**
+```json
+{
+  "type": "AssignedAccess",
+  "properties": {
+    "configXmlPath": "XML/AssignedAccessConfig.xml"
+  }
+}
+```
+
+Place your Assigned Access XML file in `Assets/XML/`. The detection verifies:
+- kioskUser0 exists and is enabled
+- AutoLogon is configured for kioskUser0
+- Profile ID from XML exists in registry
+- Kiosk user is mapped to the correct profile
+- Taskbar setting matches
+
+**Legacy: Property-based configuration (deprecated)**
 ```json
 {
   "type": "AssignedAccess",
@@ -493,6 +513,8 @@ Use this mode when you know the adapter name, description, or MAC address.
   }
 }
 ```
+
+See `Configurations/US_CBL/Assets/XML/AssignedAccessConfig.xml` for a complete example.
 </details>
 
 ---

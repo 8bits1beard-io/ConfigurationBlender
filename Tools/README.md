@@ -109,6 +109,35 @@ Invoke-WebRequest -Uri "https://github.com/microsoft/Microsoft-Win32-Content-Pre
 
 ---
 
+## Debug-AssignedAccess.ps1
+
+**Purpose:** Collects diagnostic information for troubleshooting Windows 11 Assigned Access (multi-app kiosk) configuration issues.
+
+**Features:**
+- ✅ Queries MDM_AssignedAccess WMI class
+- ✅ Dumps AssignedAccessConfiguration registry (full recursive)
+- ✅ Checks kiosk user accounts and AutoLogon settings
+- ✅ Shows AppLocker policies
+- ✅ Verifies expected config XML file exists
+- ✅ Tests applying config and immediately reading back
+- ✅ Outputs everything to a single transcript file
+
+**Usage:**
+```powershell
+# Must run as SYSTEM
+psexec.exe -i -s powershell.exe -ExecutionPolicy Bypass -File ".\Tools\Debug-AssignedAccess.ps1"
+```
+
+**Output:**
+- Saves to `C:\Temp\AssignedAccessTS\AssignedAccess-Debug.txt`
+
+**When to use:**
+- Kiosk mode not applying correctly
+- Detection reports failure but kiosk appears to work
+- Troubleshooting AutoLogon or kioskUser0 issues
+
+---
+
 ## Why not commit the binary?
 
 We don't commit `IntuneWinAppUtil.exe` to the repository because:

@@ -276,29 +276,8 @@ function Test-AssignedAccess {
     }
 
     try {
-        $namespaceName = "root\cimv2\mdm\dmmap"
-        $className = "MDM_AssignedAccess"
-
-        # Try to get the CIM instance
-        $obj = Get-CimInstance -Namespace $namespaceName -ClassName $className -ErrorAction Stop
-
-        # Check if instance was found
-        if ($null -eq $obj) {
-            return @{
-                Passed = $false
-                Issue = "MDM_AssignedAccess CIM instance not found (kiosk mode may not be enabled)"
-            }
-        }
-
-        # Check if configuration exists
-        if ([string]::IsNullOrEmpty($obj.Configuration)) {
-            return @{
-                Passed = $false
-                Issue = "Assigned Access configuration is empty (kiosk XML not deployed)"
-            }
-        }
-
-        # NEW: If configXmlPath is specified, compare against XML file
+        # NEW: If configXmlPath is specified, verify observable outcomes from registry
+        # This approach is more reliable than comparing XML via WMI
         if ($Properties.configXmlPath) {
             $xmlPath = Join-Path $AssetBasePath $Properties.configXmlPath
 
@@ -309,64 +288,160 @@ function Test-AssignedAccess {
                 }
             }
 
-            # Read expected XML and normalize it
+            # Parse the expected XML to extract key values
             $expectedXml = Get-Content -Path $xmlPath -Raw
+            $xml = [xml]$expectedXml
 
-            # Decode the current configuration (it's HTML-encoded in WMI)
-            $currentXml = [System.Net.WebUtility]::HtmlDecode($obj.Configuration)
+            # Extract profile ID from XML
+            $ns = New-Object System.Xml.XmlNamespaceManager($xml.NameTable)
+            $ns.AddNamespace("aa", "http://schemas.microsoft.com/AssignedAccess/2017/config")
+            $ns.AddNamespace("rs5", "http://schemas.microsoft.com/AssignedAccess/201810/config")
 
-            # Normalize both XMLs for comparison (remove whitespace, newlines)
-            # This handles formatting differences that don't affect the actual config
-            function Normalize-Xml {
-                param([string]$xml)
-                try {
-                    $xdoc = [System.Xml.Linq.XDocument]::Parse($xml)
-                    # Return canonical XML string without declaration, normalized
-                    return $xdoc.Root.ToString([System.Xml.Linq.SaveOptions]::DisableFormatting)
-                } catch {
-                    # If XML parsing fails, fall back to simple normalization
-                    return ($xml -replace '\s+', ' ' -replace '>\s+<', '><').Trim()
-                }
-            }
-
-            $normalizedExpected = Normalize-Xml -xml $expectedXml
-            $normalizedCurrent = Normalize-Xml -xml $currentXml
-
-            if ($normalizedExpected -ne $normalizedCurrent) {
+            $expectedProfileId = $xml.AssignedAccessConfiguration.Profiles.Profile.Id
+            if (-not $expectedProfileId) {
                 return @{
                     Passed = $false
-                    Issue = "Assigned Access configuration does not match expected XML from $($Properties.configXmlPath)"
+                    Issue = "Could not extract Profile ID from expected XML"
                 }
             }
 
+            # Normalize GUID format (uppercase, with braces)
+            $expectedProfileId = $expectedProfileId.ToUpper()
+            if (-not $expectedProfileId.StartsWith('{')) {
+                $expectedProfileId = "{$expectedProfileId}"
+            }
+
+            # 1. Check if kiosk user exists
+            $kioskUser = Get-LocalUser -Name 'kioskUser0' -ErrorAction SilentlyContinue
+            if (-not $kioskUser) {
+                return @{
+                    Passed = $false
+                    Issue = "Kiosk user 'kioskUser0' does not exist"
+                }
+            }
+
+            if (-not $kioskUser.Enabled) {
+                return @{
+                    Passed = $false
+                    Issue = "Kiosk user 'kioskUser0' exists but is disabled"
+                }
+            }
+
+            # 2. Check AutoLogon is configured for kiosk user
+            $autoLogonPath = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon'
+            $autoLogon = Get-ItemProperty -Path $autoLogonPath -ErrorAction SilentlyContinue
+
+            if ($autoLogon.AutoAdminLogon -ne '1') {
+                return @{
+                    Passed = $false
+                    Issue = "AutoAdminLogon is not enabled"
+                }
+            }
+
+            $defaultUser = ($autoLogon.DefaultUserName -replace '\s+$', '')  # Trim trailing spaces
+            if ($defaultUser -ne 'kioskUser0') {
+                return @{
+                    Passed = $false
+                    Issue = "AutoLogon is configured for '$defaultUser', expected 'kioskUser0'"
+                }
+            }
+
+            # 3. Check AssignedAccessConfiguration registry exists with correct profile
+            $aaConfigPath = 'HKLM:\SOFTWARE\Microsoft\Windows\AssignedAccessConfiguration'
+            if (-not (Test-Path $aaConfigPath)) {
+                return @{
+                    Passed = $false
+                    Issue = "AssignedAccessConfiguration registry key does not exist"
+                }
+            }
+
+            # Check profile exists in registry
+            $profilePath = "HKLM:\SOFTWARE\Microsoft\Windows\AssignedAccessConfiguration\Profiles\$expectedProfileId"
+            if (-not (Test-Path $profilePath)) {
+                return @{
+                    Passed = $false
+                    Issue = "Expected profile '$expectedProfileId' not found in AssignedAccessConfiguration registry"
+                }
+            }
+
+            # 4. Verify kiosk user is mapped to the profile
+            $kioskUserSid = $kioskUser.SID.Value
+            $configPath = "HKLM:\SOFTWARE\Microsoft\Windows\AssignedAccessConfiguration\Configs\$kioskUserSid"
+            if (-not (Test-Path $configPath)) {
+                return @{
+                    Passed = $false
+                    Issue = "Kiosk user SID '$kioskUserSid' not found in AssignedAccessConfiguration Configs"
+                }
+            }
+
+            $configProps = Get-ItemProperty -Path $configPath -ErrorAction SilentlyContinue
+            $mappedProfileId = $configProps.DefaultProfileId
+            if ($mappedProfileId) {
+                $mappedProfileId = $mappedProfileId.ToUpper()
+                if (-not $mappedProfileId.StartsWith('{')) {
+                    $mappedProfileId = "{$mappedProfileId}"
+                }
+            }
+
+            if ($mappedProfileId -ne $expectedProfileId) {
+                return @{
+                    Passed = $false
+                    Issue = "Kiosk user is mapped to profile '$mappedProfileId', expected '$expectedProfileId'"
+                }
+            }
+
+            # 5. Check profile settings match expected
+            $profileProps = Get-ItemProperty -Path $profilePath -ErrorAction SilentlyContinue
+
+            # Check taskbar setting
+            $expectedTaskbar = $xml.AssignedAccessConfiguration.Profiles.Profile.Taskbar.ShowTaskbar
+            if ($expectedTaskbar -eq 'true' -and $profileProps.TaskbarAllowed -ne 1) {
+                return @{
+                    Passed = $false
+                    Issue = "Taskbar should be visible but TaskbarAllowed is not set to 1"
+                }
+            }
+            if ($expectedTaskbar -eq 'false' -and $profileProps.TaskbarAllowed -ne 0) {
+                return @{
+                    Passed = $false
+                    Issue = "Taskbar should be hidden but TaskbarAllowed is not set to 0"
+                }
+            }
+
+            # All checks passed
             return @{ Passed = $true; Issue = $null }
         }
 
-        # LEGACY: Property-based validation (backward compatibility)
-        # Check if profile ID matches
-        $expectedProfile = $Properties.profileId
-        if ($obj.Configuration -notlike "*$expectedProfile*") {
-            # Get a snippet of the actual configuration for debugging
-            $configSnippet = if ($obj.Configuration.Length -gt 100) {
-                $obj.Configuration.Substring(0, 100) + "..."
-            } else {
-                $obj.Configuration
-            }
+        # LEGACY: WMI-based validation (backward compatibility for property-based config)
+        $namespaceName = "root\cimv2\mdm\dmmap"
+        $className = "MDM_AssignedAccess"
 
+        $obj = Get-CimInstance -Namespace $namespaceName -ClassName $className -ErrorAction Stop
+
+        if ($null -eq $obj) {
             return @{
                 Passed = $false
-                Issue = "Profile ID '$expectedProfile' not found in configuration. Config starts with: $configSnippet"
+                Issue = "MDM_AssignedAccess CIM instance not found (kiosk mode may not be enabled)"
             }
         }
 
-        # All checks passed
+        if ([string]::IsNullOrEmpty($obj.Configuration)) {
+            return @{
+                Passed = $false
+                Issue = "Assigned Access configuration is empty (kiosk XML not deployed)"
+            }
+        }
+
+        $expectedProfile = $Properties.profileId
+        if ($obj.Configuration -notlike "*$expectedProfile*") {
+            return @{
+                Passed = $false
+                Issue = "Profile ID '$expectedProfile' not found in WMI configuration"
+            }
+        }
+
         return @{ Passed = $true; Issue = $null }
 
-    } catch [Microsoft.Management.Infrastructure.CimException] {
-        return @{
-            Passed = $false
-            Issue = "CIM Error accessing MDM_AssignedAccess: $($_.Exception.Message)"
-        }
     } catch {
         return @{
             Passed = $false
@@ -562,9 +637,47 @@ function Test-DriverInstalled {
     param($Properties)
 
     try {
-        # Search for driver by name
+        # For printer drivers, check the print subsystem (not just driver store)
+        if ($Properties.driverClass -eq "Printer") {
+            $printerDriver = Get-PrinterDriver -Name $Properties.driverName -ErrorAction SilentlyContinue
+
+            if ($null -eq $printerDriver) {
+                return @{
+                    Passed = $false
+                    Issue = "Printer driver '$($Properties.driverName)' is not registered with print subsystem"
+                }
+            }
+
+            # Check version if specified (printer drivers use different version property)
+            if ($Properties.minimumVersion) {
+                # Get version from driver store for accurate version info
+                $storeDriver = Get-WindowsDriver -Online -ErrorAction SilentlyContinue | Where-Object {
+                    $_.OriginalFileName -like "*$($Properties.driverName)*" -or $_.Driver -like "*$($Properties.driverName)*"
+                } | Select-Object -First 1
+
+                if ($storeDriver) {
+                    try {
+                        $installedVersion = [version]$storeDriver.Version
+                        $requiredVersion = [version]$Properties.minimumVersion
+
+                        if ($installedVersion -lt $requiredVersion) {
+                            return @{
+                                Passed = $false
+                                Issue = "Printer driver version $($storeDriver.Version) is older than required $($Properties.minimumVersion)"
+                            }
+                        }
+                    } catch {
+                        # Version comparison failed, but driver exists
+                    }
+                }
+            }
+
+            return @{ Passed = $true; Issue = $null }
+        }
+
+        # For non-printer drivers, search driver store by name
         $driver = Get-WindowsDriver -Online | Where-Object {
-            $_.Driver -like "*$($Properties.driverName)*"
+            $_.OriginalFileName -like "*$($Properties.driverName)*" -or $_.Driver -like "*$($Properties.driverName)*"
         } | Select-Object -First 1
 
         if ($null -eq $driver) {

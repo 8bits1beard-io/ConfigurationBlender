@@ -57,13 +57,22 @@ The device will restart and boot into kiosk mode.
 
 ## Verification
 
-To verify the configuration was applied correctly:
+After rebooting, verify the kiosk is working correctly by checking:
+
+1. **Auto-logon works** - Device boots directly into kioskUser0 session
+2. **Display name is correct** - Login screen shows "US CBL Kiosk" (or your configured display name)
+3. **Start menu pins are correct** - Only the expected shortcuts appear
+4. **Allowed apps work** - You can launch the configured applications
+
+To verify via registry (run as SYSTEM):
 
 ```cmd
-psexec.exe -i -s powershell.exe -Command "$obj = Get-CimInstance -Namespace 'root\cimv2\mdm\dmmap' -ClassName 'MDM_AssignedAccess'; [System.Net.WebUtility]::HtmlDecode($obj.Configuration)"
+psexec.exe -i -s powershell.exe -Command "Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\AssignedAccessConfiguration\Profiles\{2DEB1110-8A3E-4DE5-A2E4-FE3D4990EF4D}' | Format-List *"
 ```
 
-This will display the current Assigned Access XML configuration.
+This shows the profile settings stored in the registry.
+
+> **Note:** The MDM_AssignedAccess WMI class is a write endpoint and may not reliably reflect the currently applied configuration. Use the registry or visual verification instead.
 
 ## Troubleshooting
 

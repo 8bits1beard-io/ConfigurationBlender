@@ -606,8 +606,8 @@ function Repair-PrinterInstalled {
 
         # Remove and recreate printer if configuration is wrong
         if ($needsRecreation) {
-            # Stop Print Spooler service
-            $spoolerStopped = $false
+            # Stop Print Spooler service to clear any stuck jobs
+            $spoolerWasStopped = $false
             try {
                 $spooler = Get-Service -Name Spooler -ErrorAction Stop
 
@@ -615,26 +615,26 @@ function Repair-PrinterInstalled {
                     Stop-Service -Name Spooler -Force -ErrorAction Stop
 
                     # Wait for service to stop (10 second timeout)
-                    $timeout = 10
+                    $timeout = 20
                     $elapsed = 0
                     while ($elapsed -lt $timeout) {
                         Start-Sleep -Milliseconds 500
                         $spooler.Refresh()
                         if ($spooler.Status -eq "Stopped") {
-                            $spoolerStopped = $true
+                            $spoolerWasStopped = $true
                             break
                         }
                         $elapsed++
                     }
 
                     # Force-kill spooler process if graceful stop failed
-                    if (-not $spoolerStopped) {
+                    if (-not $spoolerWasStopped) {
                         $spoolerProcess = Get-Process -Name spoolsv -ErrorAction SilentlyContinue
                         if ($spoolerProcess) {
                             Stop-Process -Name spoolsv -Force -ErrorAction SilentlyContinue
                             Start-Sleep -Seconds 2
                         }
-                        $spoolerStopped = $true
+                        $spoolerWasStopped = $true
                     }
                 }
             } catch {
@@ -642,7 +642,7 @@ function Repair-PrinterInstalled {
                 Write-Warning "Could not stop spooler cleanly: $($_.Exception.Message)"
             }
 
-            # Clear print jobs from spool directory
+            # Clear print jobs from spool directory (while spooler is stopped)
             try {
                 $spoolPath = "C:\Windows\System32\spool\PRINTERS"
                 if (Test-Path $spoolPath) {
@@ -654,14 +654,44 @@ function Repair-PrinterInstalled {
                 Write-Warning "Could not clear spool files: $($_.Exception.Message)"
             }
 
-            # Remove existing printer
+            # Restart spooler - it must be running to remove/add printers
+            if ($spoolerWasStopped) {
+                try {
+                    Start-Service -Name Spooler -ErrorAction Stop
+
+                    # Wait for spooler to be fully ready (up to 15 seconds)
+                    $spooler = Get-Service -Name Spooler
+                    $timeout = 30
+                    $elapsed = 0
+                    while ($elapsed -lt $timeout) {
+                        $spooler.Refresh()
+                        if ($spooler.Status -eq "Running") {
+                            # Give it a moment to fully initialize
+                            Start-Sleep -Seconds 2
+                            break
+                        }
+                        Start-Sleep -Milliseconds 500
+                        $elapsed++
+                    }
+
+                    if ($spooler.Status -ne "Running") {
+                        return @{
+                            Success = $false
+                            Action = "Failed to restart Print Spooler service after clearing jobs"
+                        }
+                    }
+                } catch {
+                    return @{
+                        Success = $false
+                        Action = "Failed to restart Print Spooler service: $($_.Exception.Message)"
+                    }
+                }
+            }
+
+            # Remove existing printer (spooler must be running)
             try {
                 Remove-Printer -Name $Properties.printerName -ErrorAction Stop
             } catch {
-                # Start spooler before returning error
-                if ($spoolerStopped) {
-                    Start-Service -Name Spooler -ErrorAction SilentlyContinue
-                }
                 return @{
                     Success = $false
                     Action = "Failed to remove misconfigured printer: $($_.Exception.Message)"
@@ -679,11 +709,6 @@ function Repair-PrinterInstalled {
                     # Continue even if port removal fails
                     Write-Warning "Could not remove port: $($_.Exception.Message)"
                 }
-            }
-
-            # Start spooler before recreating printer
-            if ($spoolerStopped) {
-                Start-Service -Name Spooler -ErrorAction Stop
             }
 
             # Mark that we need to create the printer
@@ -767,6 +792,14 @@ function Repair-PrinterInstalled {
 function Repair-DriverInstalled {
     param($Properties, $CheckName)
 
+    # Helper function to find driver by name
+    function Find-Driver {
+        param([string]$DriverName)
+        Get-WindowsDriver -Online -ErrorAction SilentlyContinue | Where-Object {
+            $_.OriginalFileName -like "*$DriverName*" -or $_.Driver -like "*$DriverName*"
+        } | Select-Object -First 1
+    }
+
     try {
         # Resolve source asset path
         if (-not $Properties.sourceAssetPath) {
@@ -785,38 +818,42 @@ function Repair-DriverInstalled {
             }
         }
 
-        # Check if driver already exists
-        $existingDriver = Get-WindowsDriver -Online | Where-Object {
-            $_.Driver -like "*$($Properties.driverName)*"
-        } | Select-Object -First 1
-
-        # Determine if we need to update the driver
+        # Check if driver already exists and meets version requirements
+        $existingDriver = Find-Driver -DriverName $Properties.driverName
+        $needsInstall = $false
         $needsUpdate = $false
-        $actionMessage = ""
 
-        if ($existingDriver -and $Properties.minimumVersion) {
+        if (-not $existingDriver) {
+            $needsInstall = $true
+        } elseif ($Properties.minimumVersion) {
             try {
                 $installedVersion = [version]$existingDriver.Version
                 $requiredVersion = [version]$Properties.minimumVersion
 
                 if ($installedVersion -lt $requiredVersion) {
                     $needsUpdate = $true
-                    $actionMessage = "Updating driver from version $($existingDriver.Version) to $($Properties.minimumVersion)"
                 }
             } catch {
                 # If version comparison fails, assume update is needed
                 $needsUpdate = $true
-                $actionMessage = "Updating driver (unable to compare versions)"
+            }
+        }
+
+        # Driver already installed and meets requirements
+        if (-not $needsInstall -and -not $needsUpdate) {
+            return @{
+                Success = $true
+                Action = "Driver already installed at correct version ($($existingDriver.Version))"
             }
         }
 
         # Remove old driver if update is needed
-        if ($needsUpdate) {
+        if ($needsUpdate -and $existingDriver) {
+            $oldVersion = $existingDriver.Version
             try {
-                # Use pnputil to remove the driver
-                $driverInfName = $existingDriver.OriginalFileName
+                $driverInfName = $existingDriver.Driver
                 if ($driverInfName) {
-                    $pnpResult = & pnputil /delete-driver $driverInfName /uninstall /force 2>&1
+                    & pnputil /delete-driver $driverInfName /uninstall /force 2>&1 | Out-Null
                 }
             } catch {
                 # Log but continue - driver might not uninstall cleanly
@@ -824,34 +861,88 @@ function Repair-DriverInstalled {
             }
         }
 
-        # Install the driver (fresh install or update)
-        if (-not $existingDriver -or $needsUpdate) {
-            # Use pnputil for proper driver installation
-            $pnpResult = & pnputil /add-driver "$sourcePath" /install 2>&1
+        # Run pnputil to install/update the driver to the driver store
+        $pnpOutput = & pnputil /add-driver "$sourcePath" /install 2>&1 | Out-String
 
-            if ($LASTEXITCODE -eq 0) {
+        # For printer drivers, we also need to register with the print subsystem
+        if ($Properties.driverClass -eq "Printer") {
+            # Check if printer driver is already registered
+            $printerDriver = Get-PrinterDriver -Name $Properties.driverName -ErrorAction SilentlyContinue
+
+            if (-not $printerDriver) {
+                try {
+                    # Add the printer driver to the print subsystem
+                    Add-PrinterDriver -Name $Properties.driverName -ErrorAction Stop
+                } catch {
+                    return @{
+                        Success = $false
+                        Action = "Driver added to store but failed to register with print subsystem: $($_.Exception.Message)"
+                    }
+                }
+            }
+
+            # Verify printer driver is now available
+            $printerDriver = Get-PrinterDriver -Name $Properties.driverName -ErrorAction SilentlyContinue
+
+            if ($printerDriver) {
                 if ($needsUpdate) {
                     return @{
                         Success = $true
-                        Action = $actionMessage
+                        Action = "Updated printer driver '$($Properties.driverName)' and registered with print subsystem"
                     }
                 } else {
                     return @{
                         Success = $true
-                        Action = "Installed driver '$($Properties.driverName)' from $sourcePath"
+                        Action = "Installed printer driver '$($Properties.driverName)' and registered with print subsystem"
                     }
                 }
             } else {
                 return @{
                     Success = $false
-                    Action = "Failed to install driver: $pnpResult"
+                    Action = "Printer driver not available after registration attempt. pnputil output: $pnpOutput"
                 }
             }
         }
 
-        return @{
-            Success = $true
-            Action = "Driver already installed at correct version"
+        # For non-printer drivers, verify in driver store
+        $installedDriver = Find-Driver -DriverName $Properties.driverName
+
+        if ($installedDriver) {
+            # Driver exists - check version if required
+            if ($Properties.minimumVersion) {
+                try {
+                    $installedVersion = [version]$installedDriver.Version
+                    $requiredVersion = [version]$Properties.minimumVersion
+
+                    if ($installedVersion -lt $requiredVersion) {
+                        return @{
+                            Success = $false
+                            Action = "Driver installed but version $($installedDriver.Version) is below required $($Properties.minimumVersion)"
+                        }
+                    }
+                } catch {
+                    # Version comparison failed but driver exists
+                }
+            }
+
+            # Success - driver is installed and meets requirements
+            if ($needsUpdate) {
+                return @{
+                    Success = $true
+                    Action = "Updated driver '$($Properties.driverName)' from $oldVersion to $($installedDriver.Version)"
+                }
+            } else {
+                return @{
+                    Success = $true
+                    Action = "Installed driver '$($Properties.driverName)' version $($installedDriver.Version)"
+                }
+            }
+        } else {
+            # Driver not found after pnputil - actual failure
+            return @{
+                Success = $false
+                Action = "Driver not found after installation attempt. pnputil output: $pnpOutput"
+            }
         }
 
     } catch {
