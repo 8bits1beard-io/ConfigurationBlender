@@ -19,10 +19,10 @@ Configuration Blender enables **role-owning teams to fully own their workstation
 
 ## Problem Statement
 
-- **Configuration drift** — Devices deviate from standards due to manual changes, user modifications, or inconsistent deployments
-- **Ownership gaps** — Role-specific requirements are known by business teams but implemented by central IT, creating bottlenecks
-- **Manual remediation** — Technicians spend hours reconfiguring devices that have drifted from desired state
-- **Audit challenges** — No centralized record of what configurations should exist vs. what actually exists
+- **No drift detection** — Devices are managed through a mix of LGPO, GPO, Intune policies, and SCCM baselines, but we have no way to identify when configurations drift from desired state or correct it automatically
+- **Unclear ownership** — Windows Engineering maintains role configurations but often cannot identify the role owner, and there is no regular review process to ensure configurations reflect current business requirements
+- **Manual remediation** — Technicians spend hours troubleshooting and reconfiguring devices for issues like broken autologon, missing printers, missing shortcuts, expired certificates, and similar problems
+- **Slow time-to-fix** — Without a CI/CD pipeline, configuration changes require manual intervention and have unpredictable deployment timelines
 
 ---
 
@@ -98,11 +98,24 @@ ConfigurationBlender/
 
 ---
 
+## What This Tool Is (and Isn't)
+
+Configuration Blender **does not replace** Intune policies, SCCM baselines, LGPO, or GPO. Those tools remain the primary methods for device management.
+
+Configuration Blender **complements** existing tools by:
+- Detecting known configuration drift that existing tools don't monitor
+- Automatically correcting drift when possible
+- Providing a clear ownership model for role-specific configurations
+- Reducing incident volume for common issues (autologon, printers, shortcuts, certificates, etc.)
+
+---
+
 ## Technical Notes
 
 - Runs as `NT AUTHORITY\SYSTEM` — use `HKLM:\` for registry, `C:\Users\Public\` for shared files
 - One configuration per device — role assignment determines which config is deployed
 - Logs written to `C:\ProgramData\ConfigurationBlender\Logs\`
+- See [DOCUMENTATION.md](DOCUMENTATION.md) for technical implementation details
 
 ---
 
