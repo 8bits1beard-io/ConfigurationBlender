@@ -6,43 +6,18 @@
 
 ## Table of Contents
 
-- [Architecture Overview](#architecture-overview)
-  - [Three-Stage Pipeline](#three-stage-pipeline)
-  - [Component Diagram](#component-diagram)
-  - [Data Flow](#data-flow)
-- [Installation & Setup](#installation--setup)
-  - [Prerequisites](#prerequisites)
-  - [Repository Setup](#repository-setup)
-  - [External Tools](#external-tools)
-- [Configuration Builder (WebUI)](#configuration-builder-webui)
-  - [Features](#features)
-  - [Check Types Reference](#check-types-reference)
-  - [Validation System](#validation-system)
-- [Config.json Schema](#configjson-schema)
-  - [Metadata Fields](#metadata-fields)
-  - [Check Structure](#check-structure)
-  - [Property Reference by Type](#property-reference-by-type)
-- [Deployment Pipeline](#deployment-pipeline)
-  - [Creating a Role Configuration](#creating-a-role-configuration)
-  - [Packaging for Intune](#packaging-for-intune)
-  - [Win32 App Settings](#win32-app-settings)
-  - [Updating Configurations](#updating-configurations)
-- [Engine Scripts](#engine-scripts)
-  - [Detection (Detect.ps1)](#detection-detectps1)
-  - [Remediation (Remediate.ps1)](#remediation-remediateps1)
-  - [Execution Context](#execution-context)
-- [File Paths & Registry](#file-paths--registry)
-  - [Production Paths](#production-paths)
-  - [Registry Keys](#registry-keys)
-  - [Logging](#logging)
-- [Testing](#testing)
-  - [Local Testing](#local-testing)
-  - [Testing as SYSTEM](#testing-as-system)
-- [Extending Configuration Blender](#extending-configuration-blender)
-  - [Adding New Check Types](#adding-new-check-types)
-- [Troubleshooting](#troubleshooting)
-  - [Common Issues](#common-issues)
-  - [Log Analysis](#log-analysis)
+| Section | Topics |
+|---------|--------|
+| [Architecture Overview](#architecture-overview) | Pipeline, Components, Data Flow |
+| [Installation & Setup](#installation--setup) | Prerequisites, Repository, External Tools |
+| [Configuration Builder](#configuration-builder-webui) | Features, Check Types, Validation |
+| [Config.json Schema](#configjson-schema) | Metadata, Check Structure, Properties |
+| [Deployment Pipeline](#deployment-pipeline) | Create Role, Package, Deploy, Update |
+| [Engine Scripts](#engine-scripts) | Detection, Remediation, Execution Context |
+| [File Paths & Registry](#file-paths--registry) | Paths, Registry Keys, Logging |
+| [Testing](#testing) | Local Testing, SYSTEM Context |
+| [Extending](#extending-configuration-blender) | Adding New Check Types |
+| [Troubleshooting](#troubleshooting) | Common Issues, Log Analysis |
 
 ---
 
