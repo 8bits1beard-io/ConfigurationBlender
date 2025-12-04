@@ -8,12 +8,12 @@ Configuration Blender adds a detection and self-healing layer that runs alongsid
 
 ---
 
-| Responsibility | Owner | Notes |
-|----------------|-------|-------|
-| Define and maintain configuration | Role-owning team | |
-| Change control and approval | Role-owning team | |
-| Packaging and deployment | Windows Engineering | Can be automated via workflows |
-| Detection and remediation engine | Windows Engineering | Configure once, runs on schedule |
+| Responsibility | Owner |
+|----------------|-------|
+| Define and maintain configuration | Role-owning team |
+| Change control and approval | Role-owning team |
+| Packaging and deployment | Intune team (fully automatable) |
+| Detection and remediation engine | Intune team (configure once, runs automatically) |
 
 ---
 
