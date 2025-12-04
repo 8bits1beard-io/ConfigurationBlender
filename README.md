@@ -19,10 +19,14 @@ Configuration Blender adds a detection and self-healing layer that runs alongsid
 
 **How it works:**
 
-1. Role team defines desired state in a visual builder (no scripting required)
-2. Role team exports configuration and submits change request
-3. Windows Engineering packages and deploys via Intune
-4. Proactive Remediation detects drift and self-heals on schedule
+1. Role team runs `git pull` to get the latest version of the tool
+2. Role team runs `New-ConfigurationRole.ps1` to create folder structure and open the web-based editor
+3. Role team adds checks, exports Config.json and Summary, places both in the role folder
+4. Role team runs `New-IntunePackage.ps1` to create a deployable Intune app
+5. Upload app to Intune using supplied install settings
+6. Assign a group to the app (or to uninstall if removing a role)
+7. Intune pushes the configuration file and assets to the workstation
+8. Proactive Remediation reads the configuration and enforces it on schedule
 
 ---
 
