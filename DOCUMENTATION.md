@@ -377,6 +377,34 @@ flowchart TD
 </details>
 
 <details>
+<summary><strong>DriverInstalled (Printer)</strong></summary>
+
+```json
+{
+  "type": "DriverInstalled",
+  "properties": {
+    "driverName": "HP Universal Printing PCL 6",
+    "driverClass": "Printer",
+    "sourceAssetPath": "Drivers\\HP_UPD\\hpcu270u.inf",
+    "minimumVersion": "7.0.0.0"
+  }
+}
+```
+
+**Detection:**
+1. `Get-PrinterDriver -Name "driver name"` - checks print subsystem (not driver store)
+2. If `minimumVersion` specified, compares installed version
+3. FAIL if driver missing or version too old
+
+**Remediation:**
+1. `pnputil /add-driver` - adds to driver store (exit code ignored)
+2. `Add-PrinterDriver` - registers with print subsystem
+3. `Get-PrinterDriver` - verifies success (this is the source of truth)
+
+**Important:** Driver name must match exactly what the INF installs. If remediation fails, check the "Available drivers" list in the error message.
+</details>
+
+<details>
 <summary><strong>PrinterInstalled</strong></summary>
 
 ```json
@@ -394,22 +422,20 @@ flowchart TD
 ```
 
 **Port Types:** `TCP` (default), `LPR` (requires `lprQueue`)
-</details>
 
-<details>
-<summary><strong>DriverInstalled</strong></summary>
+**Detection:**
+1. `Get-Printer` - checks if printer exists
+2. Validates driver name, port name, port IP, port type match config
+3. FAIL if printer missing or any config mismatch
 
-```json
-{
-  "type": "DriverInstalled",
-  "properties": {
-    "driverName": "HP Universal Printing PCL 6",
-    "driverClass": "Printer",
-    "sourceAssetPath": "Drivers\\HP_UPD\\hpcu270u.inf",
-    "minimumVersion": "7.0.0.0"
-  }
-}
-```
+**Remediation:**
+1. Verifies driver exists via `Get-PrinterDriver` (fails if missing)
+2. Stops spooler, clears stuck jobs, restarts spooler
+3. Removes misconfigured printer/port if needed
+4. `Add-PrinterPort` - creates TCP or LPR port
+5. `Add-Printer` - creates printer with driver and port
+
+**Important:** `DriverInstalled` check must come before `PrinterInstalled` in Config.json.
 </details>
 
 <details>
