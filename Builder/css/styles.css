@@ -98,6 +98,80 @@
 
     /* Transitions */
     --transition-fast: 150ms ease;
+    --transition-normal: 250ms ease;
+}
+
+/* ============================================================================
+   Dark Mode Theme
+   ============================================================================ */
+[data-theme="dark"] {
+    /* Primary Colors */
+    --color-primary: #4DA3FF;
+    --color-primary-hover: #6BB3FF;
+    --color-primary-dark: #2684FF;
+
+    /* Neutrals */
+    --color-bg: #1A1A1A;
+    --color-surface: #242424;
+    --color-surface-elevated: #2D2D2D;
+    --color-border: #3D3D3D;
+    --color-border-strong: #4D4D4D;
+    --color-text: #E8E8E8;
+    --color-text-secondary: #A0A0A0;
+    --color-text-muted: #808080;
+    --color-text-inverse: #1A1A1A;
+
+    /* Semantic State Colors */
+    --color-success: #4CAF50;
+    --color-success-bg: #1B3D1F;
+    --color-success-border: #2E5E33;
+    --color-warning: #FFD54F;
+    --color-warning-bg: #3D3520;
+    --color-warning-border: #5E5230;
+    --color-warning-text: #FFD54F;
+    --color-warning-critical: #FF9800;
+    --color-error: #EF5350;
+    --color-error-bg: #3D1F1F;
+    --color-error-border: #5E2E2E;
+    --color-info: #90A4AE;
+    --color-info-bg: #1F2D33;
+    --color-info-border: #37474F;
+
+    /* Category Colors - adjusted for dark backgrounds */
+    --color-cat-applications: #64B5F6;
+    --color-cat-applications-bg: #1A2A3D;
+    --color-cat-applications-border: #2A4A6D;
+    --color-cat-files: #FF8A65;
+    --color-cat-files-bg: #3D2A1A;
+    --color-cat-files-border: #5E4A2A;
+    --color-cat-shortcuts: #BA68C8;
+    --color-cat-shortcuts-bg: #2D1A33;
+    --color-cat-shortcuts-border: #4D2A53;
+    --color-cat-registry: #F06292;
+    --color-cat-registry-bg: #3D1A2A;
+    --color-cat-registry-border: #5E2A4A;
+    --color-cat-system: #81C784;
+    --color-cat-system-bg: #1A2D1B;
+    --color-cat-system-border: #2A4D2B;
+    --color-cat-network: #4DB6AC;
+    --color-cat-network-bg: #1A2D2A;
+    --color-cat-network-border: #2A4D4A;
+    --color-cat-security: #EF5350;
+    --color-cat-security-bg: #3D1A1A;
+    --color-cat-security-border: #5E2A2A;
+
+    /* Focus & Interaction */
+    --color-focus: #4DA3FF;
+    --color-focus-ring: rgba(77, 163, 255, 0.4);
+    --color-highlight: #1A2A3D;
+    --color-highlight-strong: #2A4A6D;
+
+    /* Dark Surface (JSON Preview) - slightly lighter for contrast */
+    --color-dark-bg: #0D0D0D;
+    --color-dark-surface: #1A1A1A;
+    --color-dark-border: #2D2D2D;
+    --color-dark-text: #E8E8E8;
+    --color-dark-text-secondary: #B0B0B0;
     --transition-normal: 200ms ease;
 }
 
@@ -332,6 +406,39 @@ body {
 
 .btn-info:hover:not(:disabled) {
     background-color: rgba(255, 255, 255, 0.15);
+}
+
+/* Theme Toggle Button */
+.btn-theme-toggle {
+    background-color: transparent;
+    color: var(--color-text-inverse);
+    border-color: var(--color-text-inverse);
+    padding: var(--spacing-xs) var(--spacing-sm);
+    min-width: 44px;
+    position: relative;
+}
+
+.btn-theme-toggle:hover:not(:disabled) {
+    background-color: rgba(255, 255, 255, 0.15);
+}
+
+.btn-theme-toggle .theme-icon-light,
+.btn-theme-toggle .theme-icon-dark {
+    font-size: 1.1rem;
+    line-height: 1;
+}
+
+/* Show moon in light mode, sun in dark mode */
+.btn-theme-toggle .theme-icon-dark {
+    display: none;
+}
+
+[data-theme="dark"] .btn-theme-toggle .theme-icon-light {
+    display: none;
+}
+
+[data-theme="dark"] .btn-theme-toggle .theme-icon-dark {
+    display: inline;
 }
 
 .btn-sm {
@@ -790,6 +897,47 @@ fieldset legend {
     outline-offset: 1px;
 }
 
+/* Reorder buttons */
+.check-reorder-buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    flex-shrink: 0;
+}
+
+.btn-reorder {
+    width: 20px;
+    height: 16px;
+    padding: 0;
+    border: 1px solid var(--color-border);
+    background-color: var(--color-surface);
+    color: var(--color-text-secondary);
+    cursor: pointer;
+    border-radius: var(--radius-sm);
+    font-size: 8px;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all var(--transition-fast);
+}
+
+.btn-reorder:hover:not(:disabled) {
+    background-color: var(--color-primary);
+    color: var(--color-text-inverse);
+    border-color: var(--color-primary);
+}
+
+.btn-reorder:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+}
+
+.btn-reorder:focus-visible {
+    outline: 2px solid var(--color-focus);
+    outline-offset: 1px;
+}
+
 /* ============================================================================
    Search & Status - Accessible Live Regions
    ============================================================================ */
@@ -1059,6 +1207,80 @@ fieldset legend {
     border-radius: var(--radius-md);
     margin-top: var(--spacing-md);
     border-left: 4px solid var(--color-primary);
+}
+
+/* Examples modal */
+.examples-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: var(--spacing-md);
+    padding: var(--spacing-sm);
+}
+
+.example-card {
+    background-color: var(--color-surface);
+    border: 2px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    padding: var(--spacing-md);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    display: flex;
+    gap: var(--spacing-md);
+    align-items: flex-start;
+}
+
+.example-card:hover {
+    border-color: var(--color-primary);
+    background-color: var(--color-highlight);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.example-card:focus-visible {
+    outline: 3px solid var(--color-focus);
+    outline-offset: 2px;
+    border-color: var(--color-primary);
+}
+
+.example-icon {
+    font-size: 2rem;
+    flex-shrink: 0;
+    width: 48px;
+    height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: var(--color-surface-elevated);
+    border-radius: var(--radius-md);
+}
+
+.example-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.example-info h4 {
+    margin: 0 0 var(--spacing-xs) 0;
+    color: var(--color-text);
+    font-size: var(--font-size-md);
+    font-weight: 600;
+}
+
+.example-info p {
+    margin: 0 0 var(--spacing-sm) 0;
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-sm);
+    line-height: 1.4;
+}
+
+.example-count {
+    display: inline-block;
+    background-color: var(--color-primary);
+    color: var(--color-text-inverse);
+    padding: var(--spacing-xs) var(--spacing-sm);
+    border-radius: 12px;
+    font-size: var(--font-size-xs);
+    font-weight: 600;
 }
 
 /* ============================================================================

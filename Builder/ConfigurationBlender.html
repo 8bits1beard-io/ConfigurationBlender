@@ -82,12 +82,24 @@
                     class="btn btn-primary"
                     onclick="exportSummary()">Summary</button>
             <button type="button"
+                    class="btn btn-secondary"
+                    onclick="showExamples()">Examples</button>
+            <button type="button"
                     class="btn btn-info"
                     onclick="showAbout()">About</button>
             <button type="button"
                     class="btn btn-info"
                     onclick="showSettings()"
                     aria-label="Settings">&#9881;</button>
+            <button type="button"
+                    class="btn btn-theme-toggle"
+                    id="themeToggle"
+                    onclick="toggleTheme()"
+                    aria-label="Toggle dark mode"
+                    title="Toggle dark mode">
+                <span class="theme-icon-light" aria-hidden="true">&#9790;</span>
+                <span class="theme-icon-dark" aria-hidden="true">&#9728;</span>
+            </button>
         </nav>
     </header>
 
@@ -328,6 +340,26 @@
             </div>
             <div id="settingsContent">
                 <!-- Settings content populated by JavaScript -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Examples Modal Dialog -->
+    <div class="modal"
+         id="examplesModal"
+         role="dialog"
+         aria-modal="true"
+         aria-labelledby="examplesModalTitle">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="examplesModalTitle">Example Configurations</h3>
+                <button type="button"
+                        class="close-btn"
+                        onclick="closeExamples()"
+                        aria-label="Close dialog">&times;</button>
+            </div>
+            <div id="examplesContent" class="examples-grid">
+                <!-- Examples populated by JavaScript -->
             </div>
         </div>
     </div>

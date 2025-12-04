@@ -21,6 +21,9 @@ const checkDependencies = {
 // ============================================================================
 
 document.addEventListener('DOMContentLoaded', () => {
+    // Initialize theme from localStorage or system preference
+    initTheme();
+
     // Set today's date
     document.getElementById('configDate').value = new Date().toISOString().split('T')[0];
     updatePreview();
@@ -36,6 +39,64 @@ document.addEventListener('DOMContentLoaded', () => {
     // Set up check list keyboard navigation
     setupCheckListAccessibility();
 });
+
+// ============================================================================
+// Theme Management
+// ============================================================================
+
+function initTheme() {
+    const savedTheme = localStorage.getItem('theme');
+    const systemPrefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+
+    if (savedTheme) {
+        setTheme(savedTheme);
+    } else if (systemPrefersDark) {
+        setTheme('dark');
+    } else {
+        setTheme('light');
+    }
+
+    // Listen for system theme changes
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
+        if (!localStorage.getItem('theme')) {
+            setTheme(e.matches ? 'dark' : 'light');
+        }
+    });
+}
+
+function setTheme(theme) {
+    document.documentElement.setAttribute('data-theme', theme);
+    updateThemeToggleButton(theme);
+
+    // Update meta theme-color for browser UI
+    const metaThemeColor = document.querySelector('meta[name="theme-color"]');
+    if (metaThemeColor) {
+        metaThemeColor.setAttribute('content', theme === 'dark' ? '#1A1A1A' : '#2684FF');
+    }
+}
+
+function toggleTheme() {
+    const currentTheme = document.documentElement.getAttribute('data-theme') || 'light';
+    const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+
+    setTheme(newTheme);
+    localStorage.setItem('theme', newTheme);
+
+    // Announce theme change to screen readers
+    if (typeof announce === 'function') {
+        announce(`Switched to ${newTheme} mode`);
+    }
+}
+
+function updateThemeToggleButton(theme) {
+    const button = document.getElementById('themeToggle');
+    if (!button) return;
+
+    const isDark = theme === 'dark';
+    button.setAttribute('aria-pressed', isDark.toString());
+    button.setAttribute('aria-label', isDark ? 'Switch to light mode' : 'Switch to dark mode');
+    button.setAttribute('title', isDark ? 'Switch to light mode' : 'Switch to dark mode');
+}
 
 // ============================================================================
 // State Management
@@ -120,7 +181,20 @@ function renderChecksList(filterText = '') {
                      onclick="selectCheck(${index})"
                      ondblclick="editCheck(${index})"
                      onkeydown="handleCheckItemKeydown(event, ${index})">
-                    <span class="drag-handle" title="Drag to reorder" aria-hidden="true">&#8942;&#8942;</span>
+                    <div class="check-reorder-buttons">
+                        <button type="button"
+                                class="btn-reorder"
+                                onclick="event.stopPropagation(); moveCheck(${index}, -1)"
+                                title="Move up"
+                                aria-label="Move ${escapeHtml(check.name)} up"
+                                ${index === 0 ? 'disabled' : ''}>&#9650;</button>
+                        <button type="button"
+                                class="btn-reorder"
+                                onclick="event.stopPropagation(); moveCheck(${index}, 1)"
+                                title="Move down"
+                                aria-label="Move ${escapeHtml(check.name)} down"
+                                ${index === checks.length - 1 ? 'disabled' : ''}>&#9660;</button>
+                    </div>
                     <span class="check-order" aria-hidden="true">${index + 1}</span>
                     <div class="check-info">
                         <div class="check-name">${escapeHtml(check.name)}</div>
@@ -214,6 +288,76 @@ function getCheckTypeCategory(type) {
         'CertificateInstalled': 'cat-security'
     };
     return categoryMap[type] || 'cat-system';
+}
+
+/**
+ * Find a duplicate check based on type and key properties
+ * @param {string} type - The check type
+ * @param {object} properties - The check properties
+ * @param {string} name - The check name
+ * @returns {object|null} - The duplicate check if found, null otherwise
+ */
+function findDuplicateCheck(type, properties, name) {
+    // Check for exact name match first
+    const nameMatch = checks.find(c => c.name.toLowerCase() === name.toLowerCase());
+    if (nameMatch) return nameMatch;
+
+    // Check for key property matches based on check type
+    return checks.find(c => {
+        if (c.type !== type) return false;
+
+        switch (type) {
+            case 'Application':
+                return c.properties.applicationName?.toLowerCase() === properties.applicationName?.toLowerCase();
+
+            case 'RegistryValue':
+                return c.properties.path?.toLowerCase() === properties.path?.toLowerCase() &&
+                       c.properties.name?.toLowerCase() === properties.name?.toLowerCase();
+
+            case 'ShortcutExists':
+                return c.properties.path?.toLowerCase() === properties.path?.toLowerCase();
+
+            case 'ShortcutsAllowList':
+                return c.properties.path?.toLowerCase() === properties.path?.toLowerCase();
+
+            case 'FolderEmpty':
+            case 'FolderExists':
+                return c.properties.path?.toLowerCase() === properties.path?.toLowerCase();
+
+            case 'FilesExist':
+                return c.properties.destinationPath?.toLowerCase() === properties.destinationPath?.toLowerCase();
+
+            case 'ScheduledTaskExists':
+                return c.properties.taskName?.toLowerCase() === properties.taskName?.toLowerCase();
+
+            case 'ServiceRunning':
+                return c.properties.serviceName?.toLowerCase() === properties.serviceName?.toLowerCase();
+
+            case 'WindowsFeature':
+                return c.properties.featureName?.toLowerCase() === properties.featureName?.toLowerCase();
+
+            case 'DriverInstalled':
+                return c.properties.driverName?.toLowerCase() === properties.driverName?.toLowerCase();
+
+            case 'PrinterInstalled':
+                return c.properties.printerName?.toLowerCase() === properties.printerName?.toLowerCase();
+
+            case 'FirewallRule':
+                return c.properties.ruleName?.toLowerCase() === properties.ruleName?.toLowerCase();
+
+            case 'CertificateInstalled':
+                return c.properties.thumbprint?.toLowerCase() === properties.thumbprint?.toLowerCase();
+
+            case 'NetworkAdapterConfiguration':
+                return c.properties.adapterName?.toLowerCase() === properties.adapterName?.toLowerCase();
+
+            case 'AssignedAccess':
+                return c.properties.profileId?.toLowerCase() === properties.profileId?.toLowerCase();
+
+            default:
+                return false;
+        }
+    });
 }
 
 function filterChecks() {
@@ -529,6 +673,21 @@ function saveCheck() {
         properties: properties
     };
 
+    // Check for duplicate checks (only when adding new, not editing)
+    if (editingCheckIndex < 0) {
+        const duplicate = findDuplicateCheck(type, properties, name);
+        if (duplicate) {
+            const proceed = confirm(
+                `A similar check already exists:\n\n` +
+                `"${duplicate.name}" (${duplicate.type})\n\n` +
+                `Are you sure you want to add this check anyway?`
+            );
+            if (!proceed) {
+                return;
+            }
+        }
+    }
+
     // Check for missing icon dependency on ShortcutExists
     if (type === 'ShortcutExists' && properties.iconLocation) {
         const iconPath = properties.iconLocation.toLowerCase();
@@ -575,6 +734,46 @@ function saveCheck() {
                         editingCheckIndex++;
                     }
                 }
+            }
+        }
+    }
+
+    // Check for missing driver dependency on PrinterInstalled
+    if (type === 'PrinterInstalled' && properties.driverName) {
+        const hasDriverCheck = checks.some(c =>
+            c.type === 'DriverInstalled' &&
+            c.properties.driverName?.toLowerCase() === properties.driverName.toLowerCase()
+        );
+
+        if (!hasDriverCheck) {
+            const addDriver = confirm(
+                `This printer uses driver "${properties.driverName}" but no DriverInstalled check exists for it.\n\n` +
+                `Printers require their driver to be installed first.\n\n` +
+                `Would you like to add a DriverInstalled check?\n\n` +
+                `Click OK to add the driver check, or Cancel to continue without it.`
+            );
+
+            if (addDriver) {
+                const driverCheck = {
+                    id: getNextCheckId(),
+                    name: `${properties.driverName} Driver`,
+                    type: 'DriverInstalled',
+                    enabled: true,
+                    properties: {
+                        driverName: properties.driverName,
+                        driverClass: 'Printer',
+                        sourceAssetPath: 'Drivers\\',
+                        minimumVersion: ''
+                    }
+                };
+                // Insert before the printer check
+                const insertIndex = editingCheckIndex >= 0 ? editingCheckIndex : checks.length;
+                checks.splice(insertIndex, 0, driverCheck);
+                // Adjust editing index since we inserted before
+                if (editingCheckIndex >= 0) {
+                    editingCheckIndex++;
+                }
+                showToast('Driver check added - update the sourceAssetPath to point to your .inf file', 'info', 'Driver Check Created');
             }
         }
     }
@@ -647,6 +846,238 @@ function showSettings() {
 function closeSettings() {
     document.getElementById('settingsModal').classList.remove('active');
     if (typeof restoreFocus === 'function') restoreFocus();
+}
+
+// ============================================================================
+// Examples Modal
+// ============================================================================
+
+const exampleConfigurations = [
+    {
+        name: 'Kiosk Setup',
+        description: 'Basic kiosk configuration with Edge shortcuts, desktop cleanup, and Assigned Access',
+        icon: '&#128421;', // Desktop monitor
+        config: {
+            role: 'Kiosk',
+            description: 'Kiosk configuration with limited apps and clean desktop',
+            checks: [
+                {
+                    id: '1', name: 'Clear Desktop', type: 'FolderEmpty', enabled: true,
+                    properties: { paths: ['$env:PUBLIC\\Desktop'], includeAllUserProfiles: true }
+                },
+                {
+                    id: '2', name: 'Kiosk Shortcut', type: 'ShortcutExists', enabled: true,
+                    properties: {
+                        path: 'C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\Kiosk App.lnk',
+                        targetPath: 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
+                        arguments: '--no-first-run --kiosk https://example.com --edge-kiosk-type=public-browsing',
+                        description: 'Kiosk Application'
+                    }
+                }
+            ]
+        }
+    },
+    {
+        name: 'Desktop Cleanup',
+        description: 'Remove unwanted shortcuts and clean up desktop folders',
+        icon: '&#128465;', // Wastebasket
+        config: {
+            role: 'Cleanup',
+            description: 'Desktop and Start Menu cleanup configuration',
+            checks: [
+                {
+                    id: '1', name: 'Clear Public Desktop', type: 'FolderEmpty', enabled: true,
+                    properties: { paths: ['$env:PUBLIC\\Desktop'], includeAllUserProfiles: false }
+                },
+                {
+                    id: '2', name: 'Clear User Desktops', type: 'FolderEmpty', enabled: true,
+                    properties: { paths: ['$env:USERPROFILE\\Desktop'], includeAllUserProfiles: true }
+                }
+            ]
+        }
+    },
+    {
+        name: 'Browser Control',
+        description: 'Ensure only approved browsers are installed',
+        icon: '&#127760;', // Globe
+        config: {
+            role: 'Browser',
+            description: 'Browser installation enforcement',
+            checks: [
+                {
+                    id: '1', name: 'Chrome Not Installed', type: 'Application', enabled: true,
+                    properties: {
+                        applicationName: 'Google Chrome',
+                        ensureInstalled: false,
+                        searchPaths: [
+                            'C:\\Program Files*\\Google\\Chrome\\Application\\chrome.exe',
+                            'C:\\Users\\*\\AppData\\Local\\Google\\Chrome\\Application\\chrome.exe'
+                        ],
+                        uninstallPaths: [
+                            'C:\\Program Files*\\Google\\Chrome\\Application\\*\\Installer\\setup.exe',
+                            'C:\\Users\\*\\AppData\\Local\\Google\\Chrome\\Application\\*\\Installer\\setup.exe'
+                        ],
+                        uninstallArguments: '--uninstall --multi-install --chrome --system-level --force-uninstall'
+                    }
+                },
+                {
+                    id: '2', name: 'Firefox Not Installed', type: 'Application', enabled: true,
+                    properties: {
+                        applicationName: 'Mozilla Firefox',
+                        ensureInstalled: false,
+                        searchPaths: ['C:\\Program Files*\\Mozilla Firefox\\firefox.exe'],
+                        uninstallPaths: ['C:\\Program Files*\\Mozilla Firefox\\uninstall\\helper.exe'],
+                        uninstallArguments: '/S'
+                    }
+                }
+            ]
+        }
+    },
+    {
+        name: 'Printer Setup',
+        description: 'Deploy network printer with driver',
+        icon: '&#128424;', // Printer
+        config: {
+            role: 'Printer',
+            description: 'Network printer deployment with driver installation',
+            checks: [
+                {
+                    id: '1', name: 'Printer Driver', type: 'DriverInstalled', enabled: true,
+                    properties: {
+                        driverName: 'HP Universal Printing PCL 6',
+                        driverClass: 'Printer',
+                        sourceAssetPath: 'Drivers\\HP_UPD\\hpcu270u.inf'
+                    }
+                },
+                {
+                    id: '2', name: 'Office Printer', type: 'PrinterInstalled', enabled: true,
+                    properties: {
+                        printerName: 'Office Printer',
+                        driverName: 'HP Universal Printing PCL 6',
+                        printerIP: '192.168.1.100',
+                        portName: 'IP_192.168.1.100',
+                        portType: 'TCP',
+                        setAsDefault: true
+                    }
+                }
+            ]
+        }
+    },
+    {
+        name: 'Registry Policies',
+        description: 'Common Windows policy settings via registry',
+        icon: '&#128273;', // Key
+        config: {
+            role: 'Policies',
+            description: 'Windows registry-based policy settings',
+            checks: [
+                {
+                    id: '1', name: 'Disable First Run Experience', type: 'RegistryValue', enabled: true,
+                    properties: {
+                        path: 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Edge',
+                        name: 'HideFirstRunExperience',
+                        value: 1,
+                        type: 'DWord'
+                    }
+                },
+                {
+                    id: '2', name: 'Left-Align Start Menu', type: 'RegistryValue', enabled: true,
+                    properties: {
+                        path: 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\Explorer',
+                        name: 'HideRecommendedSection',
+                        value: 1,
+                        type: 'DWord'
+                    }
+                }
+            ]
+        }
+    },
+    {
+        name: 'Service Management',
+        description: 'Ensure critical services are running',
+        icon: '&#9881;', // Gear
+        config: {
+            role: 'Services',
+            description: 'Service state enforcement',
+            checks: [
+                {
+                    id: '1', name: 'Print Spooler Running', type: 'ServiceRunning', enabled: true,
+                    properties: {
+                        serviceName: 'Spooler',
+                        startupType: 'Automatic',
+                        ensureRunning: true
+                    }
+                },
+                {
+                    id: '2', name: 'Windows Update Running', type: 'ServiceRunning', enabled: true,
+                    properties: {
+                        serviceName: 'wuauserv',
+                        startupType: 'Manual',
+                        ensureRunning: true
+                    }
+                }
+            ]
+        }
+    }
+];
+
+function showExamples() {
+    const modal = document.getElementById('examplesModal');
+    const content = document.getElementById('examplesContent');
+
+    content.innerHTML = exampleConfigurations.map((example, index) => `
+        <div class="example-card" onclick="loadExample(${index})" tabindex="0" role="button"
+             onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();loadExample(${index});}">
+            <div class="example-icon" aria-hidden="true">${example.icon}</div>
+            <div class="example-info">
+                <h4>${escapeHtml(example.name)}</h4>
+                <p>${escapeHtml(example.description)}</p>
+                <span class="example-count">${example.config.checks.length} checks</span>
+            </div>
+        </div>
+    `).join('');
+
+    modal.classList.add('active');
+
+    if (typeof saveFocus === 'function') saveFocus();
+
+    setTimeout(() => {
+        const firstCard = content.querySelector('.example-card');
+        if (firstCard) firstCard.focus();
+    }, 100);
+}
+
+function closeExamples() {
+    document.getElementById('examplesModal').classList.remove('active');
+    if (typeof restoreFocus === 'function') restoreFocus();
+}
+
+function loadExample(index) {
+    const example = exampleConfigurations[index];
+    if (!example) return;
+
+    if (checks.length > 0) {
+        if (!confirm('This will replace your current checks. Continue?')) {
+            return;
+        }
+    }
+
+    // Load the example configuration
+    document.getElementById('configRole').value = example.config.role || '';
+    document.getElementById('configDescription').value = example.config.description || '';
+    document.getElementById('configVersion').value = '1.0.0';
+    document.getElementById('configDate').value = new Date().toISOString().split('T')[0];
+
+    checks = JSON.parse(JSON.stringify(example.config.checks));
+    renderChecksList();
+    markUnsaved();
+    closeExamples();
+
+    showStatus(`Loaded "${example.name}" example with ${checks.length} checks`, 'success');
+
+    if (typeof announceSuccess === 'function') {
+        announceSuccess(`Loaded ${example.name} example`);
+    }
 }
 
 // ============================================================================
