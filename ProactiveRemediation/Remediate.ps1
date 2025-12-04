@@ -878,78 +878,57 @@ function Repair-DriverInstalled {
         }
 
         # Run pnputil to install/update the driver to the driver store
+        # Note: pnputil exit codes are unreliable, so we verify success by checking if driver exists afterward
         $pnpOutput = & pnputil /add-driver "$sourcePath" /install 2>&1 | Out-String
-        $pnpExitCode = $LASTEXITCODE
 
-        # Check if pnputil reported success (look for success messages in output)
-        $pnpSuccess = ($pnpOutput -match "Successfully|added driver packages|Total driver packages:.*1") -and
-                      ($pnpOutput -notmatch "Failed to add driver package|Error|not found")
-
-        if (-not $pnpSuccess -and $pnpExitCode -ne 0) {
-            return @{
-                Success = $false
-                Action = "pnputil failed to add driver (exit code: $pnpExitCode). Output: $pnpOutput"
-            }
-        }
-
-        # For printer drivers, we also need to register with the print subsystem
+        # For printer drivers, verify using Get-PrinterDriver (the authoritative source)
         if ($Properties.driverClass -eq "Printer") {
             # Give the system a moment to process the driver
             Start-Sleep -Seconds 2
 
-            # Check if printer driver is already registered
+            # Check if printer driver is now registered
             $printerDriver = Get-PrinterDriver -Name $Properties.driverName -ErrorAction SilentlyContinue
 
             if (-not $printerDriver) {
+                # Driver not in print subsystem yet - try to add it
                 try {
-                    # Add the printer driver to the print subsystem
                     Add-PrinterDriver -Name $Properties.driverName -ErrorAction Stop
+                    Start-Sleep -Seconds 1
                 } catch {
-                    # If Add-PrinterDriver fails, try to find available printer drivers and suggest the correct name
+                    # Add-PrinterDriver failed - the driver name in the INF may not match what we expect
+                    # List available drivers to help diagnose
                     $availableDrivers = Get-PrinterDriver -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name
-                    $suggestion = ""
-                    if ($availableDrivers) {
-                        $matchingDriver = $availableDrivers | Where-Object { $_ -like "*$($Properties.driverName.Split(' ')[0])*" } | Select-Object -First 1
-                        if ($matchingDriver) {
-                            $suggestion = " Available similar driver: '$matchingDriver'"
-                        }
-                    }
+                    $driverList = if ($availableDrivers) { ($availableDrivers | Select-Object -First 10) -join ", " } else { "none" }
                     return @{
                         Success = $false
-                        Action = "Failed to register printer driver '$($Properties.driverName)' with print subsystem: $($_.Exception.Message).$suggestion pnputil output: $pnpOutput"
+                        Action = "Failed to register printer driver '$($Properties.driverName)': $($_.Exception.Message). Available drivers: $driverList. pnputil output: $pnpOutput"
                     }
                 }
             }
 
-            # Verify printer driver is now available
-            Start-Sleep -Seconds 1
+            # Final verification - is the driver now available?
             $printerDriver = Get-PrinterDriver -Name $Properties.driverName -ErrorAction SilentlyContinue
 
             if ($printerDriver) {
-                if ($needsUpdate) {
-                    return @{
-                        Success = $true
-                        Action = "Updated printer driver '$($Properties.driverName)' and registered with print subsystem"
-                    }
-                } else {
-                    return @{
-                        Success = $true
-                        Action = "Installed printer driver '$($Properties.driverName)' and registered with print subsystem"
-                    }
+                return @{
+                    Success = $true
+                    Action = "Installed printer driver '$($Properties.driverName)'"
                 }
             } else {
-                # List what drivers ARE available to help troubleshoot
-                $availableDrivers = Get-PrinterDriver -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name | Select-Object -First 10
-                $driverList = if ($availableDrivers) { $availableDrivers -join ", " } else { "none found" }
+                # Still not available - list what IS available
+                $availableDrivers = Get-PrinterDriver -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name
+                $driverList = if ($availableDrivers) { ($availableDrivers | Select-Object -First 10) -join ", " } else { "none" }
                 return @{
                     Success = $false
-                    Action = "Printer driver '$($Properties.driverName)' not available after registration attempt. Available drivers: $driverList. pnputil output: $pnpOutput"
+                    Action = "Printer driver '$($Properties.driverName)' not found after installation. Available drivers: $driverList. pnputil output: $pnpOutput"
                 }
             }
         }
 
-        # For non-printer drivers, verify in driver store
-        $installedDriver = Find-Driver -DriverName $Properties.driverName
+        # For non-printer drivers, verify in driver store using Get-WindowsDriver
+        $installedDriver = Get-WindowsDriver -Online -ErrorAction SilentlyContinue | Where-Object {
+            $_.OriginalFileName -like "*$($Properties.driverName)*" -or $_.Driver -like "*$($Properties.driverName)*"
+        } | Select-Object -First 1
 
         if ($installedDriver) {
             # Driver exists - check version if required
@@ -969,17 +948,9 @@ function Repair-DriverInstalled {
                 }
             }
 
-            # Success - driver is installed and meets requirements
-            if ($needsUpdate) {
-                return @{
-                    Success = $true
-                    Action = "Updated driver '$($Properties.driverName)' from $oldVersion to $($installedDriver.Version)"
-                }
-            } else {
-                return @{
-                    Success = $true
-                    Action = "Installed driver '$($Properties.driverName)' version $($installedDriver.Version)"
-                }
+            return @{
+                Success = $true
+                Action = "Installed driver '$($Properties.driverName)' version $($installedDriver.Version)"
             }
         } else {
             # Driver not found after pnputil - actual failure
