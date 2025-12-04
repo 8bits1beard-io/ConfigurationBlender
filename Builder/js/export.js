@@ -558,14 +558,32 @@ function generateCertificateInstalledSummary(props) {
 
 function generateNetworkAdapterSummary(props) {
     let md = '```mermaid\nflowchart TD\n';
-    const adapterLabel = props.adapterName || props.adapterDescription || props.macAddress || 'Adapter';
-    md += `    A[🌐 ${adapterLabel}]\n`;
-    if (props.staticIPAddress) {
-        md += `    A --> B[IP: ${props.staticIPAddress}/${props.subnetPrefixLength || 24}]\n`;
-        if (props.defaultGateway) md += `    B --> C[Gateway: ${props.defaultGateway}]\n`;
-    }
-    if (props.dnsServers && props.dnsServers.length > 0) {
-        md += `    A --> D[DNS: ${props.dnsServers.join(', ')}]\n`;
+
+    // Determine identification mode
+    const isSubnetMode = !!props.identifyByCurrentSubnet;
+    const adapterLabel = isSubnetMode
+        ? `Subnet ${props.identifyByCurrentSubnet}`
+        : (props.adapterName || props.adapterDescription || props.macAddress || 'Adapter');
+
+    if (isSubnetMode) {
+        md += `    A[🔍 Find adapter in ${props.identifyByCurrentSubnet}]\n`;
+        md += `    A --> B[🌐 Convert to Static]\n`;
+        md += `    B --> C[IP: ${props.staticIPAddress}/${props.subnetPrefixLength || 24}]\n`;
+        if (!props.defaultGateway) {
+            md += `    C --> D[No Gateway - Isolated]\n`;
+        }
+        if (!props.dnsServers || props.dnsServers.length === 0) {
+            md += `    C --> E[No DNS - No Conflicts]\n`;
+        }
+    } else {
+        md += `    A[🌐 ${adapterLabel}]\n`;
+        if (props.staticIPAddress) {
+            md += `    A --> B[IP: ${props.staticIPAddress}/${props.subnetPrefixLength || 24}]\n`;
+            if (props.defaultGateway) md += `    B --> C[Gateway: ${props.defaultGateway}]\n`;
+        }
+        if (props.dnsServers && props.dnsServers.length > 0) {
+            md += `    A --> D[DNS: ${props.dnsServers.join(', ')}]\n`;
+        }
     }
     if (props.networkCategory) {
         md += `    A --> E[Category: ${props.networkCategory}]\n`;
@@ -577,9 +595,18 @@ function generateNetworkAdapterSummary(props) {
 
     md += '**Adapter Identification:**\n';
     md += `| Property | Value |\n|----------|-------|\n`;
-    if (props.adapterName) md += `| Adapter Name | \`${props.adapterName}\` |\n`;
-    if (props.adapterDescription) md += `| Description | \`${props.adapterDescription}\` |\n`;
-    if (props.macAddress) md += `| MAC Address | \`${props.macAddress}\` |\n`;
+    if (isSubnetMode) {
+        md += `| Mode | Subnet-based (DHCP to Static) |\n`;
+        md += `| Target Subnet | \`${props.identifyByCurrentSubnet}\` |\n`;
+        if (props.excludeSubnets && props.excludeSubnets.length > 0) {
+            md += `| Excluded Subnets | ${props.excludeSubnets.map(s => '\`' + s + '\`').join(', ')} |\n`;
+        }
+    } else {
+        md += `| Mode | Traditional |\n`;
+        if (props.adapterName) md += `| Adapter Name | \`${props.adapterName}\` |\n`;
+        if (props.adapterDescription) md += `| Description | \`${props.adapterDescription}\` |\n`;
+        if (props.macAddress) md += `| MAC Address | \`${props.macAddress}\` |\n`;
+    }
 
     md += '\n**IP Configuration:**\n';
     md += `| Property | Value |\n|----------|-------|\n`;
@@ -589,14 +616,30 @@ function generateNetworkAdapterSummary(props) {
     } else {
         md += `| DHCP | Enabled |\n`;
     }
-    if (props.defaultGateway) md += `| Gateway | \`${props.defaultGateway}\` |\n`;
-    if (props.dnsServers) md += `| DNS Servers | ${props.dnsServers.map(d => '\`' + d + '\`').join(', ')} |\n`;
+    if (props.defaultGateway) {
+        md += `| Gateway | \`${props.defaultGateway}\` |\n`;
+    } else if (isSubnetMode) {
+        md += `| Gateway | None (isolated network) |\n`;
+    }
+    if (props.dnsServers && props.dnsServers.length > 0) {
+        md += `| DNS Servers | ${props.dnsServers.map(d => '\`' + d + '\`').join(', ')} |\n`;
+    } else if (isSubnetMode) {
+        md += `| DNS Servers | None (prevents DNS conflicts) |\n`;
+    }
+    if (props.hasOwnProperty('registerInDns')) {
+        md += `| Register in DNS | ${props.registerInDns ? 'Yes' : 'No'} |\n`;
+    }
     if (props.networkCategory) md += `| Network Category | ${props.networkCategory} |\n`;
     if (props.interfaceMetric) md += `| Interface Metric | ${props.interfaceMetric} |\n`;
     md += `| Ensure Enabled | ${props.ensureEnabled !== false ? 'Yes' : 'No'} |\n`;
 
     md += '\n**Remediation:**\n';
-    md += 'Configures adapter with specified IP settings, DNS, and network category.\n';
+    if (isSubnetMode) {
+        md += 'Finds wired adapter with IP in target subnet, converts from DHCP to static configuration. ';
+        md += 'Corporate network is protected by safeguards (wired-only, gateway check, exclude list).\n';
+    } else {
+        md += 'Configures adapter with specified IP settings, DNS, and network category.\n';
+    }
     return md;
 }
 
