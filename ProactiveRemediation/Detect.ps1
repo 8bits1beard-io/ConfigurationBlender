@@ -648,27 +648,49 @@ function Test-DriverInstalled {
                 }
             }
 
-            # Check version if specified (printer drivers use different version property)
+            # Check version if specified
             if ($Properties.minimumVersion) {
-                # Get version from driver store for accurate version info
-                $storeDriver = Get-WindowsDriver -Online -ErrorAction SilentlyContinue | Where-Object {
-                    $_.OriginalFileName -like "*$($Properties.driverName)*" -or $_.Driver -like "*$($Properties.driverName)*"
-                } | Select-Object -First 1
+                # Get-PrinterDriver returns MajorVersion and MinorVersion properties
+                # We can also check the driver's InfPath and get version from there
+                # Or use the driver version string format: Major.Minor.Build.Revision
+                try {
+                    # Try to get version from the printer driver's associated inf in driver store
+                    $driverVersion = $null
 
-                if ($storeDriver) {
-                    try {
-                        $installedVersion = [version]$storeDriver.Version
+                    # Method 1: Check if PrinterDriver has version info
+                    if ($printerDriver.DriverVersion) {
+                        $driverVersion = $printerDriver.DriverVersion
+                    }
+
+                    # Method 2: Use MajorVersion.MinorVersion if available
+                    if (-not $driverVersion -and $printerDriver.MajorVersion) {
+                        $driverVersion = "$($printerDriver.MajorVersion).$($printerDriver.MinorVersion).0.0"
+                    }
+
+                    # Method 3: Query the inf file from driver store
+                    if (-not $driverVersion -and $printerDriver.InfPath) {
+                        $storeDriver = Get-WindowsDriver -Online -ErrorAction SilentlyContinue | Where-Object {
+                            $_.OriginalFileName -eq $printerDriver.InfPath -or $_.Driver -eq (Split-Path $printerDriver.InfPath -Leaf)
+                        } | Select-Object -First 1
+
+                        if ($storeDriver) {
+                            $driverVersion = $storeDriver.Version
+                        }
+                    }
+
+                    if ($driverVersion) {
+                        $installedVersion = [version]$driverVersion
                         $requiredVersion = [version]$Properties.minimumVersion
 
                         if ($installedVersion -lt $requiredVersion) {
                             return @{
                                 Passed = $false
-                                Issue = "Printer driver version $($storeDriver.Version) is older than required $($Properties.minimumVersion)"
+                                Issue = "Printer driver version $driverVersion is older than required $($Properties.minimumVersion)"
                             }
                         }
-                    } catch {
-                        # Version comparison failed, but driver exists
                     }
+                } catch {
+                    # Version comparison failed, but driver exists - pass with warning
                 }
             }
 
