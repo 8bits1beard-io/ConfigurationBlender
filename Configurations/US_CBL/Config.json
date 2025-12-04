@@ -6,12 +6,13 @@
   "lastModified": "2025-12-03",
   "checks": [
     {
-      "id": "chrome-not-installed",
+      "id": "1",
       "name": "Google Chrome Not Installed",
-      "type": "ApplicationNotInstalled",
+      "type": "Application",
       "enabled": true,
       "properties": {
         "applicationName": "Google Chrome",
+        "ensureInstalled": false,
         "searchPaths": [
           "C:\\Program Files*\\Google\\Chrome\\Application\\chrome.exe",
           "C:\\Users\\*\\AppData\\Local\\Google\\Chrome\\Application\\chrome.exe"
@@ -24,7 +25,7 @@
       }
     },
     {
-      "id": "desktop-folders-empty",
+      "id": "2",
       "name": "Desktop Folders Cleared",
       "type": "FolderEmpty",
       "enabled": true,
@@ -37,7 +38,7 @@
       }
     },
     {
-      "id": "start-menu-allowed-shortcuts",
+      "id": "3",
       "name": "Start Menu Contains Only Allowed Shortcuts",
       "type": "ShortcutsAllowList",
       "enabled": true,
@@ -58,7 +59,7 @@
       }
     },
     {
-      "id": "user-account-pictures-exist",
+      "id": "4",
       "name": "User Account Pictures Present",
       "type": "FolderHasFiles",
       "enabled": true,
@@ -69,7 +70,7 @@
       }
     },
     {
-      "id": "icon-files-exist",
+      "id": "5",
       "name": "Icon Files Present",
       "type": "FilesExist",
       "enabled": true,
@@ -89,7 +90,7 @@
       }
     },
     {
-      "id": "gta-time-clock-shortcut",
+      "id": "6",
       "name": "GTA Time Clock Shortcut",
       "type": "ShortcutExists",
       "enabled": true,
@@ -102,7 +103,7 @@
       }
     },
     {
-      "id": "live-better-u-shortcut",
+      "id": "7",
       "name": "Live Better U Shortcut",
       "type": "ShortcutExists",
       "enabled": true,
@@ -115,7 +116,7 @@
       }
     },
     {
-      "id": "onewalmart-shortcut",
+      "id": "8",
       "name": "OneWalmart Shortcut",
       "type": "ShortcutExists",
       "enabled": true,
@@ -128,7 +129,7 @@
       }
     },
     {
-      "id": "on-screen-keyboard-shortcut",
+      "id": "9",
       "name": "On-Screen Keyboard Shortcut",
       "type": "ShortcutExists",
       "enabled": true,
@@ -141,7 +142,7 @@
       }
     },
     {
-      "id": "time-adjustment-shortcut",
+      "id": "10",
       "name": "Time Adjustment Shortcut",
       "type": "ShortcutExists",
       "enabled": true,
@@ -154,7 +155,7 @@
       }
     },
     {
-      "id": "two-step-verification-shortcut",
+      "id": "11",
       "name": "Two-Step Verification Shortcut",
       "type": "ShortcutExists",
       "enabled": true,
@@ -167,7 +168,7 @@
       }
     },
     {
-      "id": "ulearn-shortcut",
+      "id": "12",
       "name": "ULearn Shortcut",
       "type": "ShortcutExists",
       "enabled": true,
@@ -180,7 +181,7 @@
       }
     },
     {
-      "id": "volume-shortcut",
+      "id": "13",
       "name": "Volume Shortcut",
       "type": "ShortcutExists",
       "enabled": true,
@@ -193,7 +194,7 @@
       }
     },
     {
-      "id": "walmart-academy-shortcut",
+      "id": "14",
       "name": "Walmart Academy Shortcut",
       "type": "ShortcutExists",
       "enabled": true,
@@ -206,7 +207,7 @@
       }
     },
     {
-      "id": "walmart-careers-shortcut",
+      "id": "15",
       "name": "Walmart Careers Shortcut",
       "type": "ShortcutExists",
       "enabled": true,
@@ -219,7 +220,7 @@
       }
     },
     {
-      "id": "assigned-access-configured",
+      "id": "16",
       "name": "Assigned Access Kiosk Mode",
       "type": "AssignedAccess",
       "enabled": true,
@@ -254,7 +255,7 @@
       }
     },
     {
-      "id": "hide-recommended-section",
+      "id": "17",
       "name": "Hide Start Menu Recommended Section",
       "type": "RegistryValue",
       "enabled": true,
@@ -266,7 +267,7 @@
       }
     },
     {
-      "id": "manifest-manipulator-task",
+      "id": "18",
       "name": "ManifestManipulator Scheduled Task",
       "type": "ScheduledTaskExists",
       "enabled": true,
@@ -281,7 +282,7 @@
       }
     },
     {
-      "id": "manifest-manipulator-script",
+      "id": "19",
       "name": "ManifestManipulator Script File",
       "type": "FileContent",
       "enabled": true,
@@ -291,7 +292,7 @@
       }
     },
     {
-      "id": "auto-logon-enabled",
+      "id": "20",
       "name": "Auto-Logon Configuration",
       "type": "RegistryValue",
       "enabled": true,
@@ -303,7 +304,7 @@
       }
     },
     {
-      "id": "force-auto-logon",
+      "id": "21",
       "name": "Force Auto-Logon",
       "type": "RegistryValue",
       "enabled": true,
@@ -315,20 +316,7 @@
       }
     },
     {
-      "id": "kioskuser0-pinned-list-policy",
-      "name": "KioskUser0 Start Menu Pinned List Policy",
-      "type": "UserRegistryValue",
-      "enabled": true,
-      "properties": {
-        "username": "kioskUser0",
-        "path": "Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer",
-        "name": "NoStartMenuPinnedList",
-        "value": 0,
-        "type": "DWord"
-      }
-    },
-    {
-      "id": "LexmarkPrinterDriver",
+      "id": "22",
       "name": "Lexmark Universal v2 XL",
       "type": "DriverInstalled",
       "enabled": true,
@@ -340,7 +328,7 @@
       }
     },
     {
-      "id": "PersonnelPrinter",
+      "id": "23",
       "name": "Personnel Printer",
       "type": "PrinterInstalled",
       "enabled": true,

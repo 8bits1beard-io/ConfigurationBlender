@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Configuration Blender</title>
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+    <header class="header">
+        <h1>Configuration Blender<span id="unsavedIndicator" class="unsaved-indicator" title="You have unsaved changes">●</span></h1>
+        <div class="header-config">
+            <div class="header-config-item">
+                <label>Role</label>
+                <input type="text" id="configRole" placeholder="US_CBL" onchange="updatePreview(); markUnsaved()">
+            </div>
+            <div class="header-config-item">
+                <label>Version</label>
+                <input type="text" id="configVersion" placeholder="1.0.0" value="1.0.0" onchange="updatePreview(); markUnsaved()">
+            </div>
+            <div class="header-config-item">
+                <label>Description</label>
+                <input type="text" id="configDescription" placeholder="Configuration description" onchange="updatePreview(); markUnsaved()">
+            </div>
+            <div class="header-config-item">
+                <label>Author</label>
+                <input type="text" id="configAuthor" placeholder="Your name" onchange="updatePreview(); markUnsaved()">
+            </div>
+            <div class="header-config-item">
+                <label>Date</label>
+                <input type="date" id="configDate" onchange="updatePreview(); markUnsaved()">
+            </div>
+        </div>
+        <div class="header-buttons">
+            <button class="btn btn-secondary" onclick="importConfig()">Import</button>
+            <button class="btn btn-success" onclick="exportConfig()">Export</button>
+            <button class="btn btn-primary" onclick="exportSummary()">Summary</button>
+            <button class="btn btn-info" onclick="showAbout()">About</button>
+        </div>
+    </header>
+
+    <div class="container">
+        <!-- Left Panel: Checks List -->
+        <div class="panel-checks">
+            <div class="panel-header">
+                <h2>Checks</h2>
+                <span id="checkCount" class="check-count">0</span>
+            </div>
+            <div class="checks-status">
+                <div id="statusBar" class="status-bar" style="display: none;"></div>
+                <div id="dependencyWarnings"></div>
+            </div>
+            <div class="checks-search">
+                <input type="text" id="checksSearch" placeholder="Search checks..." oninput="filterChecks()">
+            </div>
+            <div class="checks-list" id="checksList">
+                <div style="padding: 2rem; text-align: center; color: #666;">
+                    No checks added yet.<br>Click "Add Check" to begin.
+                </div>
+            </div>
+            <div class="panel-footer">
+                <button class="btn btn-primary" style="width: 100%;" onclick="showAddCheckModal()">Add Check</button>
+            </div>
+        </div>
+
+        <!-- Middle Panel: Check Editor -->
+        <div class="panel-editor">
+            <div class="panel-header">
+                <h2 id="editorTitle">Check Editor</h2>
+            </div>
+            <div class="panel-content" id="editorContent">
+                <div class="editor-placeholder">
+                    Select a check to edit, or click "Add Check" to create a new one.
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Panel: JSON Preview -->
+        <div class="panel-preview">
+            <div class="panel-header">
+                <h2>JSON Preview</h2>
+            </div>
+            <div class="panel-content">
+                <div class="json-preview" id="jsonPreview">{
+  "version": "1.0.0",
+  "role": "",
+  "description": "",
+  "author": "",
+  "lastModified": "",
+  "checks": []
+}</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add/Edit Check Modal -->
+    <div class="modal" id="checkModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="checkModalTitle">Add Check</h3>
+                <button class="close-btn" onclick="closeCheckModal()">&times;</button>
+            </div>
+            <div id="checkModalBody">
+                <div class="form-group">
+                    <label for="checkType">Check Type</label>
+                    <select id="checkType" class="check-type-select" onchange="showCheckProperties()">
+                        <option value="">Select a check type...</option>
+                        <optgroup label="Applications">
+                            <option value="Application">Application</option>
+                        </optgroup>
+                        <optgroup label="Files & Folders">
+                            <option value="FolderEmpty">Folder Empty</option>
+                            <option value="FolderHasFiles">Folder Has Files</option>
+                            <option value="FilesExist">Files Exist</option>
+                            <option value="FileContent">File Content</option>
+                            <option value="ShortcutExists">Shortcut Exists</option>
+                            <option value="ShortcutsAllowList">Shortcuts Allow List</option>
+                        </optgroup>
+                        <optgroup label="Registry">
+                            <option value="RegistryValue">Registry Value</option>
+                        </optgroup>
+                        <optgroup label="Hardware & Drivers">
+                            <option value="DriverInstalled">Driver Installed</option>
+                            <option value="PrinterInstalled">Printer Installed</option>
+                            <option value="NetworkAdapterConfiguration">Network Adapter Configuration</option>
+                        </optgroup>
+                        <optgroup label="System & Services">
+                            <option value="ServiceRunning">Service Running</option>
+                            <option value="ScheduledTaskExists">Scheduled Task Exists</option>
+                            <option value="WindowsFeature">Windows Feature</option>
+                            <option value="AssignedAccess">Assigned Access (Kiosk)</option>
+                        </optgroup>
+                        <optgroup label="Security">
+                            <option value="FirewallRule">Firewall Rule</option>
+                            <option value="CertificateInstalled">Certificate Installed</option>
+                        </optgroup>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="checkName">Display Name</label>
+                    <input type="text" id="checkName" placeholder="e.g., Google Chrome Not Installed">
+                </div>
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" id="checkEnabled" checked> Enabled
+                    </label>
+                </div>
+                <div id="checkProperties"></div>
+                <div style="margin-top: 1rem;">
+                    <button class="btn btn-success" onclick="saveCheck()">Save Check</button>
+                    <button class="btn btn-secondary" onclick="closeCheckModal()">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- About Modal -->
+    <div class="modal" id="aboutModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>About Configuration Blender</h3>
+                <button class="close-btn" onclick="closeAbout()">&times;</button>
+            </div>
+            <div class="about-content">
+                <h4>Named in Honor of June Blender</h4>
+                <p>
+                    June Blender was a Senior Content Developer at Microsoft for PowerShell. She was instrumental
+                    in writing documentation and helping users understand PowerShell, including Desired State
+                    Configuration (DSC). Her work made PowerShell more accessible to IT professionals and
+                    developers worldwide.
+                </p>
+                <p>
+                    This tool continues that mission - making configuration management accessible to engineers
+                    regardless of their scripting expertise. By providing a visual interface to define desired
+                    system states, Configuration Blender empowers teams to maintain consistent, compliant
+                    workstation configurations without requiring deep PowerShell knowledge.
+                </p>
+                <h4>How It Works</h4>
+                <p>
+                    1. <strong>Define desired state</strong> - Use this UI to create a JSON configuration file<br>
+                    2. <strong>Deploy via Intune</strong> - Package the configuration as a Win32 app<br>
+                    3. <strong>Monitor compliance</strong> - Proactive Remediation scripts enforce the configuration<br>
+                    4. <strong>Track everything</strong> - All actions are logged for auditing and troubleshooting
+                </p>
+                <div class="author-info">
+                    <strong>Developed by:</strong><br>
+                    Joshua Walderbach<br>
+                    Systems & Infrastructure Engineer III<br>
+                    Windows Engineering OS
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <input type="file" id="fileInput" style="display: none;" accept=".json" onchange="handleFileImport(event)">
+
+    <!-- External JavaScript files - order matters! -->
+    <script src="js/app.js"></script>
+    <script src="js/checkTypes.js"></script>
+    <script src="js/validation.js"></script>
+    <script src="js/export.js"></script>
+</body>
+</html>

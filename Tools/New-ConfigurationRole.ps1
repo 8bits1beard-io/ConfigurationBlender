@@ -177,7 +177,7 @@ try {
 if (-not $SkipWebUI) {
     Write-Header "Opening Configuration Builder"
 
-    $WebUIPath = Join-Path $RepoRoot "WebUI\ConfigurationBuilder.html"
+    $WebUIPath = Join-Path $RepoRoot "Builder\ConfigurationBlender.html"
 
     if (Test-Path $WebUIPath) {
         try {
@@ -203,7 +203,7 @@ Write-Host "📋 Your role structure is ready!" -ForegroundColor Green
 Write-Host ""
 Write-Host "Step 1: Build your configuration in the WebUI" -ForegroundColor Cyan
 if ($SkipWebUI) {
-    Write-Host "   Open: $RepoRoot\WebUI\ConfigurationBuilder.html" -ForegroundColor White
+    Write-Host "   Open: $RepoRoot\Builder\ConfigurationBlender.html" -ForegroundColor White
 }
 Write-Host "   - Set Role: $Role" -ForegroundColor White
 Write-Host "   - Set Version: 1.0.0" -ForegroundColor White
@@ -223,7 +223,7 @@ Write-Host "   - AccountPictures\ (for user account pictures)" -ForegroundColor 
 Write-Host "   - Wallpapers\     (for desktop backgrounds)" -ForegroundColor Gray
 Write-Host ""
 Write-Host "Step 4: Test locally (optional)" -ForegroundColor Cyan
-Write-Host "   See GUIDE_Creating_Your_First_Configuration.md (Part 3)" -ForegroundColor White
+Write-Host "   See README.md for testing instructions" -ForegroundColor White
 Write-Host ""
 Write-Host "Step 5: Package for Intune" -ForegroundColor Cyan
 Write-Host "   .\Tools\New-IntunePackage.ps1 -Role ""$Role""" -ForegroundColor White

@@ -12,13 +12,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Configuration Blender follows a three-stage deployment pipeline:
 
-1. **WebUI** (`WebUI/ConfigurationBuilder.html`) - Browser-based visual editor that generates Config.json files
+1. **Builder** (`Builder/ConfigurationBlender.html`) - Browser-based visual editor that generates Config.json files
 2. **Win32 App** (`Packaging/Install.ps1`, `Packaging/Detect.ps1`) - Deploys Config.json and Assets to endpoints via Intune
-3. **Proactive Remediation** (`Engine/Detect.ps1`, `Engine/Remediate.ps1`) - Detects configuration drift and automatically remediates
+3. **Proactive Remediation** (`ProactiveRemediation/Detect.ps1`, `ProactiveRemediation/Remediate.ps1`) - Detects configuration drift and automatically remediates
 
-### Critical Architectural Principle: Role-Agnostic Engine
+### Critical Architectural Principle: Role-Agnostic Proactive Remediation
 
-The Engine scripts (`Engine/Detect.ps1` and `Engine/Remediate.ps1`) are **role-agnostic**. They work for ALL roles (US_CBL, US_DVR, etc.) by reading whatever `Config.json` is deployed to the device at `C:\ProgramData\ConfigurationBlender\Config.json`.
+The ProactiveRemediation scripts (`ProactiveRemediation/Detect.ps1` and `ProactiveRemediation/Remediate.ps1`) are **role-agnostic**. They work for ALL roles (US_CBL, US_DVR, etc.) by reading whatever `Config.json` is deployed to the device at `C:\ProgramData\ConfigurationBlender\Config.json`.
 
 - Each device gets ONE Win32 app package based on Intune group assignment
 - The Win32 app deploys role-specific Config.json and Assets
@@ -36,7 +36,7 @@ The Engine scripts (`Engine/Detect.ps1` and `Engine/Remediate.ps1`) are **role-a
 1. **Registry Access:**
    - `HKLM:\` (Local Machine) - ✅ Full access
    - `HKCU:\` (Current User) - ⚠️ **SYSTEM's** registry hive, NOT the logged-in user's
-   - To modify user-specific registry, use `UserRegistryValue` check type or explicitly load user hives
+   - User-specific registry modifications are not supported (scripts run as SYSTEM)
 
 2. **File Paths:**
    - `C:\Windows\`, `C:\Program Files\` - ✅ Full access
@@ -63,10 +63,10 @@ The Engine scripts (`Engine/Detect.ps1` and `Engine/Remediate.ps1`) are **role-a
 
 - ✅ **DO:** Use `C:\Users\Public\` for items that should apply to all users
 - ✅ **DO:** Use `HKLM:\` for system-wide registry settings
-- ✅ **DO:** Use `UserRegistryValue` check type for per-user registry modifications
 - ✅ **DO:** Explicitly specify usernames when targeting specific user profiles
 - ❌ **DON'T:** Use `HKCU:\` expecting it to affect logged-in users (it affects SYSTEM's hive)
 - ❌ **DON'T:** Use `$env:USERPROFILE` expecting it to be a user's profile folder
+- ❌ **DON'T:** Try to modify per-user registry settings (not supported in SYSTEM context)
 - ❌ **DON'T:** Create shortcuts in user desktops without specifying the username
 
 #### Example Issues:
@@ -84,26 +84,26 @@ The Engine scripts (`Engine/Detect.ps1` and `Engine/Remediate.ps1`) are **role-a
 ```
 **Why:** This modifies SYSTEM's registry, not the logged-in user's. When the user logs in, their Start Menu position won't be affected.
 
-**✅ This WILL work:**
+**✅ Use HKLM for system-wide settings instead:**
 ```json
 {
-  "type": "UserRegistryValue",
+  "type": "RegistryValue",
   "properties": {
-    "username": "kiosk_user",
-    "path": "Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced",
-    "name": "TaskbarAl",
-    "value": 0
+    "path": "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\Explorer",
+    "name": "DisableNotificationCenter",
+    "value": 1,
+    "type": "DWord"
   }
 }
 ```
-**Why:** Explicitly loads the user's registry hive and modifies it.
+**Why:** HKLM registry values are accessible to SYSTEM and apply system-wide.
 
 #### Testing in SYSTEM Context:
 
 When testing locally, use PsExec to run as SYSTEM:
 ```powershell
 # Download PsExec from https://docs.microsoft.com/en-us/sysinternals/downloads/psexec
-psexec -i -s powershell.exe -ExecutionPolicy Bypass -File "C:\ProgramData\ConfigurationBlender\Engine\Detect.ps1"
+psexec -i -s powershell.exe -ExecutionPolicy Bypass -File "C:\ProgramData\ConfigurationBlender\ProactiveRemediation\Detect.ps1"
 ```
 
 This reveals the same environment variables and permissions that Intune will use in production.
@@ -134,12 +134,11 @@ The Config.json file defines:
 
 ### Supported Check Types
 
-Each check type requires a corresponding `Test-[CheckType]` function in `Engine/Detect.ps1` and `Repair-[CheckType]` function in `Engine/Remediate.ps1`.
+Each check type requires a corresponding `Test-[CheckType]` function in `ProactiveRemediation/Detect.ps1` and `Repair-[CheckType]` function in `ProactiveRemediation/Remediate.ps1`.
 
 | Type | Purpose | Key Properties | Example Use Case |
 |------|---------|----------------|------------------|
-| `ApplicationNotInstalled` | Ensure app is not present | `applicationName`, `searchPaths`, `uninstallPaths`, `uninstallArguments` | Remove unwanted browsers |
-| `ApplicationInstalled` | Ensure app is present | `applicationName`, `installCommand`, `detectionPath`, `minimumVersion` | Install Git for Windows via winget |
+| `Application` | Ensure app is/isn't installed | `applicationName`, `ensureInstalled`, `searchPaths`, `installCommand`/`uninstallPaths` | Install Git or remove Chrome |
 | `FolderEmpty` | Ensure folder has no contents | `paths`, `includeAllUserProfiles` | Desktop cleanup |
 | `ShortcutsAllowList` | Only allowed shortcuts exist | `path`, `allowedShortcuts` | Kiosk desktop control |
 | `FolderHasFiles` | Folder contains minimum files | `path`, `minimumFileCount`, `sourceAssetPath` | User account pictures |
@@ -147,7 +146,6 @@ Each check type requires a corresponding `Test-[CheckType]` function in `Engine/
 | `ShortcutExists` | Create/verify shortcut | `path`, `targetPath`, `arguments`, `iconLocation`, `description` | Company portal with Edge |
 | `AssignedAccess` | Configure kiosk mode (⚠️ requires SYSTEM) | `profileId`, `displayName`, `allowedApps`, `startPins` | Single-app kiosk |
 | `RegistryValue` | Set registry value | `path`, `name`, `value`, `type` | Win11 Start Menu left align |
-| `UserRegistryValue` | Set user-specific registry | `username`, `path`, `name`, `value`, `type` | User-specific policies |
 | `ScheduledTaskExists` | Create scheduled task | `taskName`, `execute`, `arguments`, `trigger`, `principal` | Daily 3 AM restart for updates |
 | `FileContent` | Deploy file with content | `path`, `sourceAssetPath` | Deploy scripts or configs |
 | `ServiceRunning` | Ensure Windows service is running | `serviceName`, `startupType`, `ensureRunning` | Keep Print Spooler running |
@@ -169,9 +167,9 @@ Each check type requires a corresponding `Test-[CheckType]` function in `Engine/
 
 ### Development Paths (in this repository)
 - **Configurations:** `Configurations/[ROLE]/Config.json`
-- **Engine Scripts:** `Engine/Detect.ps1`, `Engine/Remediate.ps1`
+- **ProactiveRemediation Scripts:** `ProactiveRemediation/Detect.ps1`, `ProactiveRemediation/Remediate.ps1`
 - **Packaging Scripts:** `Packaging/Install.ps1`, `Packaging/Detect.ps1`
-- **WebUI:** `WebUI/ConfigurationBuilder.html`
+- **Builder:** `Builder/ConfigurationBlender.html`
 
 ## Common Development Tasks
 
@@ -189,20 +187,20 @@ To test a configuration before packaging and deploying to Intune:
    Copy-Item -Path "Configurations\US_CBL\Config.json" -Destination "C:\ProgramData\ConfigurationBlender\" -Force
    Copy-Item -Path "Configurations\US_CBL\Assets" -Destination "C:\ProgramData\ConfigurationBlender\" -Recurse -Force
 
-   # Copy Engine scripts
-   Copy-Item -Path "Engine\Detect.ps1" -Destination "C:\ProgramData\ConfigurationBlender\Engine\" -Force
-   Copy-Item -Path "Engine\Remediate.ps1" -Destination "C:\ProgramData\ConfigurationBlender\Engine\" -Force
+   # Copy ProactiveRemediation scripts
+   Copy-Item -Path "ProactiveRemediation\Detect.ps1" -Destination "C:\ProgramData\ConfigurationBlender\ProactiveRemediation\" -Force
+   Copy-Item -Path "ProactiveRemediation\Remediate.ps1" -Destination "C:\ProgramData\ConfigurationBlender\ProactiveRemediation\" -Force
    ```
 
 2. **Run detection:**
    ```powershell
    cd "C:\ProgramData\ConfigurationBlender"
-   & ".\Engine\Detect.ps1"
+   & ".\ProactiveRemediation\Detect.ps1"
    ```
 
 3. **Run remediation if needed:**
    ```powershell
-   & ".\Engine\Remediate.ps1"
+   & ".\ProactiveRemediation\Remediate.ps1"
    ```
 
 4. **View logs:**
@@ -220,10 +218,10 @@ To test a configuration before packaging and deploying to Intune:
   ```powershell
   # Download PsExec from https://docs.microsoft.com/en-us/sysinternals/downloads/psexec
   # Run detection as SYSTEM
-  psexec -i -s powershell.exe -ExecutionPolicy Bypass -File "C:\ProgramData\ConfigurationBlender\Engine\Detect.ps1"
+  psexec -i -s powershell.exe -ExecutionPolicy Bypass -File "C:\ProgramData\ConfigurationBlender\ProactiveRemediation\Detect.ps1"
 
   # Run remediation as SYSTEM
-  psexec -i -s powershell.exe -ExecutionPolicy Bypass -File "C:\ProgramData\ConfigurationBlender\Engine\Remediate.ps1"
+  psexec -i -s powershell.exe -ExecutionPolicy Bypass -File "C:\ProgramData\ConfigurationBlender\ProactiveRemediation\Remediate.ps1"
   ```
   In production, Intune automatically runs both scripts as SYSTEM, so this is only a concern for local testing.
 
@@ -239,7 +237,7 @@ To test a configuration before packaging and deploying to Intune:
    - Validates role name
    - Creates `Configurations/US_MPC/` folder
    - Creates `Configurations/US_MPC/Assets/` folder
-   - Opens `WebUI/ConfigurationBuilder.html` in default browser
+   - Opens `Builder/ConfigurationBlender.html` in default browser
    - Displays next steps
 
 2. **Build Config.json in WebUI:**
@@ -256,8 +254,8 @@ To test a configuration before packaging and deploying to Intune:
    New-Item -ItemType Directory -Path "Configurations\US_MPC\Assets" -Force
    ```
 
-2. **Open WebUI manually:**
-   - Open `WebUI/ConfigurationBuilder.html` in browser
+2. **Open Builder manually:**
+   - Open `Builder/ConfigurationBlender.html` in browser
    - Build and export Config.json
 
 3. **Add assets** to `Configurations/US_MPC/Assets/` subfolders
@@ -307,10 +305,10 @@ Copy-Item "Packaging\Install.ps1" "Configurations\US_CBL\" -Force
 
 When adding a new check type (e.g., `ServiceRunning`):
 
-1. **Add form UI in WebUI:** Update `getPropertiesFormForType()` in `WebUI/ConfigurationBuilder.html`
-2. **Add detection logic:** Create `Test-ServiceRunning` function in `Engine/Detect.ps1`
-3. **Add remediation logic:** Create `Repair-ServiceRunning` function in `Engine/Remediate.ps1`
-4. **Update switch statements:** Add case for `ServiceRunning` in both engine scripts
+1. **Add form UI in Builder:** Update `getPropertiesFormForType()` in `Builder/ConfigurationBlender.html`
+2. **Add detection logic:** Create `Test-ServiceRunning` function in `ProactiveRemediation/Detect.ps1`
+3. **Add remediation logic:** Create `Repair-ServiceRunning` function in `ProactiveRemediation/Remediate.ps1`
+4. **Update switch statements:** Add case for `ServiceRunning` in both ProactiveRemediation scripts
 5. **Test thoroughly** using manual testing workflow
 
 ## Logging and Debugging
@@ -358,7 +356,7 @@ Detailed Results:
     {
       "Id": "chrome-not-installed",
       "Name": "Google Chrome Not Installed",
-      "Type": "ApplicationNotInstalled",
+      "Type": "Application",
       "Passed": true,
       "Issue": null
     },
@@ -447,7 +445,7 @@ The `Packaging/Detect.ps1` script checks `InstalledVersion` against `$ExpectedVe
 In Config.json, asset references use `sourceAssetPath` property (e.g., `"Icons"` - relative to the Assets folder, do NOT include "Assets\\" prefix). During remediation:
 
 1. `Packaging/Install.ps1` copies assets to `C:\ProgramData\ConfigurationBlender\Assets\`
-2. `Engine/Remediate.ps1` resolves paths: `Join-Path $AssetBasePath $Properties.sourceAssetPath`
+2. `ProactiveRemediation/Remediate.ps1` resolves paths: `Join-Path $AssetBasePath $Properties.sourceAssetPath`
 3. Files are copied from `C:\...\DSC\Assets\Icons\` to their final destination
 
 ### Driver Version Enforcement
@@ -707,7 +705,7 @@ This configuration ensures the private network adapter:
 **Proactive Remediation failing:**
 - Check logs in `C:\ProgramData\ConfigurationBlender\Logs\`
 - Verify Win32 app deployed successfully first (PR requires Config.json)
-- Run engine scripts manually as admin for detailed error output
+- Run ProactiveRemediation scripts manually as admin for detailed error output
 - Check that Assets folder exists and contains required files
 
 **AssignedAccess check showing as failed during local testing:**

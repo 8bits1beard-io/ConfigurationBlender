@@ -57,35 +57,71 @@ try {
 # REMEDIATION HANDLERS
 # ============================================================================
 
-function Repair-ApplicationNotInstalled {
+function Repair-Application {
     param($Properties, $CheckName)
 
-    $uninstalled = 0
-    foreach ($uninstallPath in $Properties.uninstallPaths) {
-        $installers = Get-ChildItem $uninstallPath -ErrorAction SilentlyContinue
-        foreach ($installer in $installers) {
-            try {
-                Start-Process -FilePath $installer.FullName -ArgumentList $Properties.uninstallArguments -Wait -PassThru | Out-Null
-                $uninstalled++
-            } catch {
+    if ($Properties.ensureInstalled) {
+        # Application SHOULD be installed - run install command
+        if (-not $Properties.installCommand) {
+            return @{
+                Success = $false
+                Action = "No install command specified for $($Properties.applicationName)"
+            }
+        }
+
+        try {
+            # Parse the command - first part is executable, rest is arguments
+            $cmdParts = $Properties.installCommand -split ' ', 2
+            $executable = $cmdParts[0]
+            $arguments = if ($cmdParts.Length -gt 1) { $cmdParts[1] } else { "" }
+
+            $process = Start-Process -FilePath $executable -ArgumentList $arguments -Wait -PassThru
+            if ($process.ExitCode -eq 0) {
+                return @{
+                    Success = $true
+                    Action = "Installed $($Properties.applicationName)"
+                }
+            } else {
                 return @{
                     Success = $false
-                    Action = "Failed to uninstall from $($installer.FullName): $($_.Exception.Message)"
+                    Action = "Install command returned exit code $($process.ExitCode)"
+                }
+            }
+        } catch {
+            return @{
+                Success = $false
+                Action = "Failed to install $($Properties.applicationName): $($_.Exception.Message)"
+            }
+        }
+    } else {
+        # Application should NOT be installed - uninstall it
+        $uninstalled = 0
+        foreach ($uninstallPath in $Properties.uninstallPaths) {
+            $installers = Get-ChildItem $uninstallPath -ErrorAction SilentlyContinue
+            foreach ($installer in $installers) {
+                try {
+                    Start-Process -FilePath $installer.FullName -ArgumentList $Properties.uninstallArguments -Wait -PassThru | Out-Null
+                    $uninstalled++
+                } catch {
+                    return @{
+                        Success = $false
+                        Action = "Failed to uninstall from $($installer.FullName): $($_.Exception.Message)"
+                    }
                 }
             }
         }
-    }
 
-    if ($uninstalled -gt 0) {
+        if ($uninstalled -gt 0) {
+            return @{
+                Success = $true
+                Action = "Uninstalled $uninstalled instance(s) of $($Properties.applicationName)"
+            }
+        }
+
         return @{
             Success = $true
-            Action = "Uninstalled $uninstalled instance(s) of $($Properties.applicationName)"
+            Action = "No installations found to remove"
         }
-    }
-
-    return @{
-        Success = $true
-        Action = "No installations found to remove"
     }
 }
 
@@ -360,32 +396,6 @@ function Repair-RegistryValue {
         return @{
             Success = $false
             Action = "Failed to set registry value: $($_.Exception.Message)"
-        }
-    }
-}
-
-function Repair-UserRegistryValue {
-    param($Properties, $CheckName)
-
-    try {
-        $SID = (New-Object System.Security.Principal.NTAccount($Properties.username)).Translate([System.Security.Principal.SecurityIdentifier]).Value
-        $userPath = "Registry::HKEY_USERS\$SID\$($Properties.path)"
-
-        # Ensure registry path exists
-        if (-not (Test-Path $userPath)) {
-            New-Item -Path $userPath -Force | Out-Null
-        }
-
-        Set-ItemProperty -Path $userPath -Name $Properties.name -Value $Properties.value -Type $Properties.type -Force
-
-        return @{
-            Success = $true
-            Action = "Set user registry value $($Properties.name) to $($Properties.value) for $($Properties.username)"
-        }
-    } catch {
-        return @{
-            Success = $false
-            Action = "Failed to set user registry value: $($_.Exception.Message)"
         }
     }
 }
@@ -1106,7 +1116,7 @@ foreach ($check in $Config.checks) {
 
     try {
         $repairResult = switch ($check.type) {
-            "ApplicationNotInstalled" { Repair-ApplicationNotInstalled -Properties $check.properties -CheckName $check.name }
+            "Application" { Repair-Application -Properties $check.properties -CheckName $check.name }
             "FolderEmpty" { Repair-FolderEmpty -Properties $check.properties -CheckName $check.name }
             "ShortcutsAllowList" { Repair-ShortcutsAllowList -Properties $check.properties -CheckName $check.name }
             "FolderHasFiles" { Repair-FolderHasFiles -Properties $check.properties -CheckName $check.name }
@@ -1114,7 +1124,6 @@ foreach ($check in $Config.checks) {
             "ShortcutExists" { Repair-ShortcutExists -Properties $check.properties -CheckName $check.name }
             "AssignedAccess" { Repair-AssignedAccess -Properties $check.properties -CheckName $check.name }
             "RegistryValue" { Repair-RegistryValue -Properties $check.properties -CheckName $check.name }
-            "UserRegistryValue" { Repair-UserRegistryValue -Properties $check.properties -CheckName $check.name }
             "ScheduledTaskExists" { Repair-ScheduledTaskExists -Properties $check.properties -CheckName $check.name }
             "FileContent" { Repair-FileContent -Properties $check.properties -CheckName $check.name }
             "ServiceRunning" { Repair-ServiceRunning -Properties $check.properties -CheckName $check.name }

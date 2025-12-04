@@ -53,7 +53,7 @@ try {
 # CHECK TYPE HANDLERS
 # ============================================================================
 
-function Test-ApplicationNotInstalled {
+function Test-Application {
     param($Properties)
 
     $found = @()
@@ -62,10 +62,38 @@ function Test-ApplicationNotInstalled {
         if ($items) { $found += $items }
     }
 
-    if ($found.Count -gt 0) {
-        return @{
-            Passed = $false
-            Issue = "$($Properties.applicationName) is installed ($($found.Count) installation(s) found)"
+    $isInstalled = $found.Count -gt 0
+
+    if ($Properties.ensureInstalled) {
+        # Application SHOULD be installed
+        if (-not $isInstalled) {
+            return @{
+                Passed = $false
+                Issue = "$($Properties.applicationName) is not installed"
+            }
+        }
+
+        # Check minimum version if specified
+        if ($Properties.minimumVersion -and $found.Count -gt 0) {
+            try {
+                $installedVersion = $found[0].VersionInfo.FileVersion
+                if ($installedVersion -and [version]$installedVersion -lt [version]$Properties.minimumVersion) {
+                    return @{
+                        Passed = $false
+                        Issue = "$($Properties.applicationName) version $installedVersion is below minimum required $($Properties.minimumVersion)"
+                    }
+                }
+            } catch {
+                # Version comparison failed, assume it's okay
+            }
+        }
+    } else {
+        # Application should NOT be installed
+        if ($isInstalled) {
+            return @{
+                Passed = $false
+                Issue = "$($Properties.applicationName) is installed ($($found.Count) installation(s) found)"
+            }
         }
     }
 
@@ -317,40 +345,6 @@ function Test-RegistryValue {
         return @{
             Passed = $false
             Issue = "Failed to check registry: $($_.Exception.Message)"
-        }
-    }
-
-    return @{ Passed = $true; Issue = $null }
-}
-
-function Test-UserRegistryValue {
-    param($Properties)
-
-    try {
-        $SID = (New-Object System.Security.Principal.NTAccount($Properties.username)).Translate([System.Security.Principal.SecurityIdentifier]).Value
-        $userPath = "Registry::HKEY_USERS\$SID\$($Properties.path)"
-
-        $currentValue = Get-ItemProperty -Path $userPath -Name $Properties.name -ErrorAction SilentlyContinue
-
-        if ($null -eq $currentValue) {
-            return @{
-                Passed = $false
-                Issue = "User registry value '$($Properties.name)' does not exist for $($Properties.username)"
-            }
-        }
-
-        $actualValue = $currentValue.$($Properties.name)
-
-        if ($actualValue -ne $Properties.value) {
-            return @{
-                Passed = $false
-                Issue = "User registry value mismatch: expected '$($Properties.value)', found '$actualValue'"
-            }
-        }
-    } catch {
-        return @{
-            Passed = $false
-            Issue = "Failed to check user registry for $($Properties.username): $($_.Exception.Message)"
         }
     }
 
@@ -877,7 +871,7 @@ foreach ($check in $Config.checks) {
 
     try {
         $testResult = switch ($check.type) {
-            "ApplicationNotInstalled" { Test-ApplicationNotInstalled -Properties $check.properties }
+            "Application" { Test-Application -Properties $check.properties }
             "FolderEmpty" { Test-FolderEmpty -Properties $check.properties }
             "ShortcutsAllowList" { Test-ShortcutsAllowList -Properties $check.properties }
             "FolderHasFiles" { Test-FolderHasFiles -Properties $check.properties }
@@ -885,7 +879,6 @@ foreach ($check in $Config.checks) {
             "ShortcutExists" { Test-ShortcutExists -Properties $check.properties }
             "AssignedAccess" { Test-AssignedAccess -Properties $check.properties }
             "RegistryValue" { Test-RegistryValue -Properties $check.properties }
-            "UserRegistryValue" { Test-UserRegistryValue -Properties $check.properties }
             "ScheduledTaskExists" { Test-ScheduledTaskExists -Properties $check.properties }
             "FileContent" { Test-FileContent -Properties $check.properties }
             "ServiceRunning" { Test-ServiceRunning -Properties $check.properties }

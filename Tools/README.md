@@ -28,7 +28,7 @@ This folder contains tools for Configuration Blender package creation.
 3. Checks if role already exists
 4. Creates `Configurations/[ROLE]/` folder
 5. Creates `Configurations/[ROLE]/Assets/` folder
-6. Opens `WebUI/ConfigurationBuilder.html` in default browser
+6. Opens `Builder/ConfigurationBlender.html` in default browser
 7. Shows next steps for building the configuration
 
 **Recommended Workflow:**

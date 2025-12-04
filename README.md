@@ -49,14 +49,12 @@ Create complex configurations through a simple web interface - no coding require
 - Detailed JSON logs for compliance audits
 - Version control and rollback support
 
-### 19 Check Types
+### 17 Check Types
 | Type | Example |
 |------|---------|
+| `Application` | Install Git or remove unwanted browsers |
 | `RegistryValue` | Windows 11 Start Menu alignment |
-| `UserRegistryValue` | Per-user settings (SYSTEM context aware) |
 | `ShortcutExists` | Employee portal shortcuts |
-| `ApplicationInstalled` | Git for Windows via winget |
-| `ApplicationNotInstalled` | Remove unwanted browsers |
 | `ScheduledTaskExists` | Daily 3 AM restart for updates |
 | `AssignedAccess` | Kiosk mode enforcement |
 | `FolderEmpty` | Desktop cleanup |
@@ -70,7 +68,7 @@ Create complex configurations through a simple web interface - no coding require
 | `NetworkAdapterConfiguration` | Configure static IPs for dual-NIC setups |
 
 ### Real-Time Validation
-The WebUI includes intelligent validation that automatically checks for:
+The Builder includes intelligent validation that automatically checks for:
 - **HKCU:\\ usage warning** - Alerts when RegistryValue uses HKCU:\\ (SYSTEM context issue)
 - **Duplicate check IDs** - Prevents ID conflicts
 - **Required field validation** - Ensures all mandatory fields are filled
@@ -156,10 +154,10 @@ Invoke-WebRequest -Uri "https://github.com/microsoft/Microsoft-Win32-Content-Pre
    Copy-Item Config.json "C:\ProgramData\ConfigurationBlender\"
 
    # Run detection
-   .\Engine\Detect.ps1
+   .\ProactiveRemediation\Detect.ps1
 
    # Run remediation
-   .\Engine\Remediate.ps1
+   .\ProactiveRemediation\Remediate.ps1
    ```
 
 3. **Package for Intune:**
@@ -200,8 +198,8 @@ Invoke-WebRequest -Uri "https://github.com/microsoft/Microsoft-Win32-Content-Pre
 ConfigurationBlender/
 ├── README.md                              # This file - project overview
 │
-├── WebUI/
-│   └── ConfigurationBuilder.html          # Visual configuration builder
+├── Builder/
+│   └── ConfigurationBlender.html          # Visual configuration builder
 │
 ├── Configurations/                        # Role-specific configs
 │   ├── US_CBL/                            # Example: US CBL kiosks
@@ -216,7 +214,7 @@ ConfigurationBlender/
 │   ├── Install.ps1                        # Deploys config to devices
 │   └── Detect.ps1                         # Intune detection logic
 │
-├── Engine/                                # Proactive Remediation scripts
+├── ProactiveRemediation/                  # Intune Proactive Remediation scripts
 │   ├── Detect.ps1                         # Compliance checking
 │   └── Remediate.ps1                      # Auto-fix logic
 │
@@ -236,7 +234,7 @@ ConfigurationBlender/
 
 | Item | SYSTEM Behavior | Solution |
 |------|----------------|----------|
-| `HKCU:\` registry | Modifies SYSTEM's hive, not user's | Use `UserRegistryValue` check type |
+| `HKCU:\` registry | Modifies SYSTEM's hive, not user's | Use `HKLM:\` for system-wide settings |
 | `$env:USERPROFILE` | `C:\Windows\System32\config\systemprofile\` | Use explicit paths like `C:\Users\Public\` |
 | `$env:TEMP` | `C:\Windows\Temp` | Be aware for temp file operations |
 | User desktop shortcuts | Can access but need explicit username | Use `C:\Users\Public\Desktop\` for all users |
@@ -255,15 +253,15 @@ ConfigurationBlender/
 }
 ```
 
-**Do this instead:**
+**Do this instead (use HKLM for system-wide settings):**
 ```json
 {
-  "type": "UserRegistryValue",
+  "type": "RegistryValue",
   "properties": {
-    "username": "kiosk_user",
-    "path": "Software\\...",
+    "path": "HKLM:\\SOFTWARE\\Policies\\...",
     "name": "Setting",
-    "value": "Value"
+    "value": "Value",
+    "type": "String"
   }
 }
 ```
@@ -285,7 +283,7 @@ psexec -i -s powershell.exe -ExecutionPolicy Bypass -File "C:\...\Detect.ps1"
 
 **Registry changes not applying to users**
 - You're probably using `RegistryValue` with `HKCU:\` - this modifies SYSTEM's registry
-- Solution: Use `UserRegistryValue` check type with explicit username
+- Solution: Use `HKLM:\` for system-wide policy settings instead
 
 **AssignedAccess check failing during local testing**
 - Expected when running as regular user
@@ -301,10 +299,10 @@ All operations log to: `C:\ProgramData\ConfigurationBlender\Logs\`
 
 ### Adding New Check Types
 
-1. Add form UI in `WebUI/ConfigurationBuilder.html` (`getPropertiesFormForType()`)
-2. Add detection logic: `Test-[CheckType]` function in `Engine/Detect.ps1`
-3. Add remediation logic: `Repair-[CheckType]` function in `Engine/Remediate.ps1`
-4. Update switch statements in both engine scripts
+1. Add form UI in `Builder/ConfigurationBlender.html` (`getPropertiesFormForType()`)
+2. Add detection logic: `Test-[CheckType]` function in `ProactiveRemediation/Detect.ps1`
+3. Add remediation logic: `Repair-[CheckType]` function in `ProactiveRemediation/Remediate.ps1`
+4. Update switch statements in both ProactiveRemediation scripts
 
 ---
 
