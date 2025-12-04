@@ -2,18 +2,18 @@
 
 **Devices drift. We can't see it. We can't fix it automatically. This changes that.**
 
-Today, workstations are managed through a mix of LGPO, GPO, Intune policies, and SCCM baselines—but none of these tell us when a device has drifted from its intended configuration. When autologon breaks, a printer disappears, a shortcut goes missing, or a certificate expires, we find out through an incident. Technicians spend hours manually fixing problems that could be detected and corrected automatically.
+Today, workstations are managed through a mix of LGPO, GPO, Intune policies, and SCCM baselines. None of these tell us when a device has drifted from its intended configuration. When autologon breaks, a printer disappears, a shortcut goes missing, or a certificate expires, we find out through an incident. Technicians spend hours manually fixing problems that could be detected and corrected automatically.
 
 Configuration Blender adds a detection and self-healing layer that runs alongside existing tools. Role-owning teams define what their devices should look like. Windows Engineering deploys it. Devices fix themselves.
 
 ---
 
-| Responsibility | Owner |
-|----------------|-------|
-| Define and maintain configuration | Role-owning team |
-| Change control and approval | Role-owning team |
-| Packaging and deployment | Windows Engineering |
-| Detection and remediation engine | Windows Engineering |
+| Responsibility | Owner | Notes |
+|----------------|-------|-------|
+| Define and maintain configuration | Role-owning team | |
+| Change control and approval | Role-owning team | |
+| Packaging and deployment | Windows Engineering | Can be automated via workflows |
+| Detection and remediation engine | Windows Engineering | Configure once, runs on schedule |
 
 ---
 
