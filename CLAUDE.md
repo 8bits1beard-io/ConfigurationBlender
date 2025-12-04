@@ -36,7 +36,6 @@ The ProactiveRemediation scripts (`ProactiveRemediation/Detect.ps1` and `Proacti
 1. **Registry Access:**
    - `HKLM:\` (Local Machine) - ✅ Full access
    - `HKCU:\` (Current User) - ⚠️ **SYSTEM's** registry hive, NOT the logged-in user's
-   - User-specific registry modifications are not supported (scripts run as SYSTEM)
 
 2. **File Paths:**
    - `C:\Windows\`, `C:\Program Files\` - ✅ Full access
@@ -66,7 +65,6 @@ The ProactiveRemediation scripts (`ProactiveRemediation/Detect.ps1` and `Proacti
 - ✅ **DO:** Explicitly specify usernames when targeting specific user profiles
 - ❌ **DON'T:** Use `HKCU:\` expecting it to affect logged-in users (it affects SYSTEM's hive)
 - ❌ **DON'T:** Use `$env:USERPROFILE` expecting it to be a user's profile folder
-- ❌ **DON'T:** Try to modify per-user registry settings (not supported in SYSTEM context)
 - ❌ **DON'T:** Create shortcuts in user desktops without specifying the username
 
 #### Example Issues:
@@ -141,13 +139,12 @@ Each check type requires a corresponding `Test-[CheckType]` function in `Proacti
 | `Application` | Ensure app is/isn't installed | `applicationName`, `ensureInstalled`, `searchPaths`, `installCommand`/`uninstallPaths` | Install Git or remove Chrome |
 | `FolderEmpty` | Ensure folder has no contents | `paths`, `includeAllUserProfiles` | Desktop cleanup |
 | `ShortcutsAllowList` | Only allowed shortcuts exist | `path`, `allowedShortcuts` | Kiosk desktop control |
-| `FolderHasFiles` | Folder contains minimum files | `path`, `minimumFileCount`, `sourceAssetPath` | User account pictures |
-| `FilesExist` | Specific files are present | `destinationPath`, `files`, `sourceAssetPath` | Deploy icon files |
+| `FolderExists` | Ensure folder exists (optionally with files) | `path`, `minimumFileCount`, `sourceAssetPath` | User account pictures |
+| `FilesExist` | Deploy files to destination | `mode` (MultipleFiles/SingleFile), `destinationPath`, `files`, `sourceAssetPath` | Deploy icons or scripts |
 | `ShortcutExists` | Create/verify shortcut | `path`, `targetPath`, `arguments`, `iconLocation`, `description` | Company portal with Edge |
 | `AssignedAccess` | Configure kiosk mode (⚠️ requires SYSTEM) | `profileId`, `displayName`, `allowedApps`, `startPins` | Single-app kiosk |
 | `RegistryValue` | Set registry value | `path`, `name`, `value`, `type` | Win11 Start Menu left align |
 | `ScheduledTaskExists` | Create scheduled task | `taskName`, `execute`, `arguments`, `trigger`, `principal` | Daily 3 AM restart for updates |
-| `FileContent` | Deploy file with content | `path`, `sourceAssetPath` | Deploy scripts or configs |
 | `ServiceRunning` | Ensure Windows service is running | `serviceName`, `startupType`, `ensureRunning` | Keep Print Spooler running |
 | `PrinterInstalled` | Ensure printer is configured correctly | `printerName`, `driverName`, `printerIP`, `portName`, `portType` (TCP/LPR), `lprQueue` (for LPR), `setAsDefault` | Deploy network printers with drift detection |
 | `DriverInstalled` | Ensure device driver is installed | `driverName`, `driverClass`, `sourceAssetPath`, `minimumVersion` (optional) | Install/update display or network drivers |
@@ -446,7 +443,69 @@ In Config.json, asset references use `sourceAssetPath` property (e.g., `"Icons"`
 
 1. `Packaging/Install.ps1` copies assets to `C:\ProgramData\ConfigurationBlender\Assets\`
 2. `ProactiveRemediation/Remediate.ps1` resolves paths: `Join-Path $AssetBasePath $Properties.sourceAssetPath`
-3. Files are copied from `C:\...\DSC\Assets\Icons\` to their final destination
+3. Files are copied from `C:\ProgramData\ConfigurationBlender\Assets\[sourceAssetPath]\` to their final destination
+
+### FilesExist Check Modes
+
+The `FilesExist` check supports two modes for different deployment scenarios:
+
+**MultipleFiles Mode (default):**
+Deploy multiple files from an asset folder to a destination folder.
+```json
+{
+  "type": "FilesExist",
+  "properties": {
+    "mode": "MultipleFiles",
+    "destinationPath": "C:\\Walmart Applications\\Desktop Icons",
+    "files": ["icon1.ico", "icon2.ico", "icon3.ico"],
+    "sourceAssetPath": "Icons"
+  }
+}
+```
+
+**SingleFile Mode:**
+Deploy a single file to an exact destination path (e.g., scripts, config files).
+```json
+{
+  "type": "FilesExist",
+  "properties": {
+    "mode": "SingleFile",
+    "destinationPath": "C:\\Scripts\\MyScript.ps1",
+    "sourceAssetPath": "Scripts\\MyScript.ps1"
+  }
+}
+```
+
+**Note:** The old `FileContent` check type has been merged into `FilesExist` with `mode: "SingleFile"`. Existing configs using `FileContent` will continue to work for backward compatibility.
+
+### FolderExists Check
+
+The `FolderExists` check ensures a folder exists and optionally contains a minimum number of files:
+
+**Folder exists only:**
+```json
+{
+  "type": "FolderExists",
+  "properties": {
+    "path": "C:\\ProgramData\\MyApp",
+    "minimumFileCount": 0
+  }
+}
+```
+
+**Folder with minimum files:**
+```json
+{
+  "type": "FolderExists",
+  "properties": {
+    "path": "C:\\ProgramData\\Microsoft\\User Account Pictures",
+    "minimumFileCount": 1,
+    "sourceAssetPath": "AccountPictures"
+  }
+}
+```
+
+**Note:** The old `FolderHasFiles` check type has been renamed to `FolderExists`. Existing configs using `FolderHasFiles` will continue to work for backward compatibility.
 
 ### Driver Version Enforcement
 

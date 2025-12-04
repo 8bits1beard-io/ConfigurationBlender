@@ -1,5 +1,6 @@
 /* ============================================================================
    Configuration Blender - Export/Import
+   WCAG 2.1/2.2 AA Compliant
    ============================================================================ */
 
 // ============================================================================
@@ -47,9 +48,28 @@ function handleFileImport(event) {
             checks = config.checks || [];
             renderChecksList();
             markUnsaved();
-            showStatus(`Configuration imported. Version bumped to ${newVersion}`, 'success');
+
+            // Show success message
+            const message = `Configuration imported. Version bumped to ${newVersion}`;
+            showStatus(message, 'success');
+
+            // Announce to screen readers
+            if (typeof announceSuccess === 'function') {
+                announceSuccess(message);
+            }
         } catch (err) {
-            showStatus('Failed to parse JSON file: ' + err.message, 'error');
+            const message = `Failed to parse JSON file: ${err.message}`;
+            showStatus(message, 'error');
+
+            // Play error sound
+            if (typeof playErrorSound === 'function') {
+                playErrorSound();
+            }
+
+            // Announce to screen readers
+            if (typeof announceError === 'function') {
+                announceError(message);
+            }
         }
     };
     reader.readAsText(file);
@@ -75,12 +95,45 @@ function doExportConfig() {
     // Mark as saved
     markSaved();
 
-    // Show reminder about file placement
+    // Show success message
     const role = config.role || '[ROLE]';
-    alert(`Config.json exported successfully!\n\nMove this file to:\nConfigurations\\${role}\\Config.json\n\nPlace any assets in:\nConfigurations\\${role}\\Assets\\`);
+    const successMessage = 'Config.json exported successfully!';
+
+    // Use accessible modal/toast instead of alert
+    if (typeof showStatus === 'function') {
+        showStatus(successMessage, 'success');
+    }
+
+    // Show detailed info in a more accessible way
+    const detailMessage = `${successMessage}\n\nMove this file to:\nConfigurations\\${role}\\Config.json\n\nPlace any assets in:\nConfigurations\\${role}\\Assets\\`;
+    alert(detailMessage);
+
+    // Play success sound
+    if (typeof playSuccessSound === 'function') {
+        playSuccessSound();
+    }
+
+    // Announce to screen readers
+    if (typeof announceSuccess === 'function') {
+        announceSuccess(successMessage);
+    }
 }
 
 function exportConfig() {
+    if (checks.length === 0) {
+        const message = 'No checks to export. Add at least one check first.';
+        showStatus(message, 'error');
+
+        if (typeof playErrorSound === 'function') {
+            playErrorSound();
+        }
+
+        if (typeof announceError === 'function') {
+            announceError(message);
+        }
+        return;
+    }
+
     const { errors } = validateConfiguration();
     if (errors.length > 0) {
         showValidationResults();
@@ -98,14 +151,13 @@ function exportConfig() {
 const checkTypeIcons = {
     'Application': '📦',
     'FolderEmpty': '📁',
-    'FolderHasFiles': '📁',
+    'FolderExists': '📁',
     'FilesExist': '📄',
     'ShortcutsAllowList': '🔗',
     'ShortcutExists': '🔗',
     'AssignedAccess': '🖥️',
     'RegistryValue': '🗝️',
     'ScheduledTaskExists': '⏰',
-    'FileContent': '📄',
     'ServiceRunning': '⚙️',
     'PrinterInstalled': '🖨️',
     'DriverInstalled': '🔧',
@@ -181,7 +233,7 @@ function generateFolderEmptySummary(props) {
     return md;
 }
 
-function generateFolderHasFilesSummary(props) {
+function generateFolderExistsSummary(props) {
     let md = '```mermaid\nflowchart LR\n';
     md += `    A[Check ${props.path}] --> B{Has ${props.minimumFileCount || 1}+ files?}\n`;
     md += '    B -->|Yes| C[✅ Pass]\n';
@@ -199,6 +251,24 @@ function generateFolderHasFilesSummary(props) {
 }
 
 function generateFilesExistSummary(props) {
+    // Handle SingleFile mode
+    if (props.mode === 'SingleFile') {
+        const fileName = props.destinationPath.split('\\').pop();
+        let md = '```mermaid\nflowchart LR\n';
+        md += `    A[Assets/${props.sourceAssetPath}] -->|Copy| B[${fileName}]\n`;
+        md += '```\n\n';
+
+        md += '**File Details:**\n';
+        md += `| Property | Value |\n|----------|-------|\n`;
+        md += `| Destination | \`${props.destinationPath}\` |\n`;
+        md += `| Source | \`Assets\\${props.sourceAssetPath}\` |\n`;
+
+        md += '\n**Remediation:**\n';
+        md += 'Copies the file from Assets to the destination path.\n';
+        return md;
+    }
+
+    // MultipleFiles mode (default)
     let md = '**Detection:**\n';
     md += `Checks if these files exist in \`${props.destinationPath}\`:\n\n`;
     md += '| File | Status |\n|------|--------|\n';
@@ -337,22 +407,6 @@ function generateScheduledTaskSummary(props) {
 
     md += '\n**Remediation:**\n';
     md += 'Creates the scheduled task with specified trigger and action.\n';
-    return md;
-}
-
-function generateFileContentSummary(props) {
-    let md = '```mermaid\nflowchart LR\n';
-    const fileName = props.path.split('\\\\').pop();
-    md += `    A[Assets/${props.sourceAssetPath}] -->|Copy| B[${fileName}]\n`;
-    md += '```\n\n';
-
-    md += '**File Details:**\n';
-    md += `| Property | Value |\n|----------|-------|\n`;
-    md += `| Destination | \`${props.path}\` |\n`;
-    md += `| Source | \`Assets\\${props.sourceAssetPath}\` |\n`;
-
-    md += '\n**Remediation:**\n';
-    md += 'Copies the file from Assets to the destination path.\n';
     return md;
 }
 
@@ -566,8 +620,8 @@ function generateCheckSummary(check, index) {
         case 'FolderEmpty':
             md += generateFolderEmptySummary(props);
             break;
-        case 'FolderHasFiles':
-            md += generateFolderHasFilesSummary(props);
+        case 'FolderExists':
+            md += generateFolderExistsSummary(props);
             break;
         case 'FilesExist':
             md += generateFilesExistSummary(props);
@@ -586,9 +640,6 @@ function generateCheckSummary(check, index) {
             break;
         case 'ScheduledTaskExists':
             md += generateScheduledTaskSummary(props);
-            break;
-        case 'FileContent':
-            md += generateFileContentSummary(props);
             break;
         case 'ServiceRunning':
             md += generateServiceRunningSummary(props);
@@ -677,8 +728,8 @@ function generateSummaryMarkdown() {
         md += '- **Driver → Printer:** Printer drivers must be installed before printers can be added\n';
     }
 
-    // Find script/task dependencies
-    const scriptChecks = configChecks.filter(c => c.type === 'FileContent');
+    // Find script/task dependencies (SingleFile mode FilesExist checks are scripts)
+    const scriptChecks = configChecks.filter(c => c.type === 'FilesExist' && c.properties.mode === 'SingleFile');
     const taskChecks = configChecks.filter(c => c.type === 'ScheduledTaskExists');
     if (scriptChecks.length > 0 && taskChecks.length > 0) {
         md += '- **Script → Task:** Script files should exist before scheduled tasks reference them\n';
@@ -709,7 +760,16 @@ function generateSummaryMarkdown() {
 function exportSummary() {
     const config = getConfig();
     if (!config.checks || config.checks.length === 0) {
-        alert('No checks to export. Add at least one check first.');
+        const message = 'No checks to export. Add at least one check first.';
+        showStatus(message, 'error');
+
+        if (typeof playErrorSound === 'function') {
+            playErrorSound();
+        }
+
+        if (typeof announceError === 'function') {
+            announceError(message);
+        }
         return;
     }
 
@@ -725,5 +785,19 @@ function exportSummary() {
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
 
-    alert(`${role}_Summary.md exported successfully!\n\nThis markdown file contains visual diagrams that render on GitHub.`);
+    // Show success message
+    const successMessage = `${role}_Summary.md exported successfully!`;
+
+    showStatus(successMessage, 'success');
+    alert(`${successMessage}\n\nThis markdown file contains visual diagrams that render on GitHub.`);
+
+    // Play success sound
+    if (typeof playSuccessSound === 'function') {
+        playSuccessSound();
+    }
+
+    // Announce to screen readers
+    if (typeof announceSuccess === 'function') {
+        announceSuccess(successMessage);
+    }
 }

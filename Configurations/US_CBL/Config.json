@@ -61,7 +61,7 @@
     {
       "id": "4",
       "name": "User Account Pictures Present",
-      "type": "FolderHasFiles",
+      "type": "FolderExists",
       "enabled": true,
       "properties": {
         "path": "C:\\ProgramData\\Microsoft\\User Account Pictures",
@@ -75,6 +75,7 @@
       "type": "FilesExist",
       "enabled": true,
       "properties": {
+        "mode": "MultipleFiles",
         "destinationPath": "C:\\Walmart Applications\\Desktop Icons",
         "files": [
           "GTA_Time_Clock.ico",
@@ -284,10 +285,11 @@
     {
       "id": "19",
       "name": "ManifestManipulator Script File",
-      "type": "FileContent",
+      "type": "FilesExist",
       "enabled": true,
       "properties": {
-        "path": "C:\\Windows\\Packagelogs\\Customizations\\ManifestManipulator.ps1",
+        "mode": "SingleFile",
+        "destinationPath": "C:\\Windows\\Packagelogs\\Customizations\\ManifestManipulator.ps1",
         "sourceAssetPath": "Scripts\\ManifestManipulator.ps1"
       }
     },

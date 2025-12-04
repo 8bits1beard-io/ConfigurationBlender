@@ -192,15 +192,25 @@ function Repair-ShortcutsAllowList {
     }
 }
 
-function Repair-FolderHasFiles {
+function Repair-FolderExists {
     param($Properties, $CheckName)
 
-    # Ensure destination directory exists
+    # Ensure folder exists
     if (-not (Test-Path $Properties.path)) {
         New-Item -ItemType Directory -Path $Properties.path -Force | Out-Null
     }
 
-    # Copy files from asset source
+    # If minimumFileCount is 0 or not specified, just ensure folder exists
+    $minCount = if ($Properties.minimumFileCount) { $Properties.minimumFileCount } else { 0 }
+
+    if ($minCount -eq 0 -or -not $Properties.sourceAssetPath) {
+        return @{
+            Success = $true
+            Action = "Folder exists: $($Properties.path)"
+        }
+    }
+
+    # Copy files from asset source if folder needs files
     $sourcePath = Join-Path $AssetBasePath $Properties.sourceAssetPath
     if (-not (Test-Path $sourcePath)) {
         return @{
@@ -229,6 +239,39 @@ function Repair-FolderHasFiles {
 function Repair-FilesExist {
     param($Properties, $CheckName)
 
+    # Handle SingleFile mode (legacy FileContent behavior)
+    if ($Properties.mode -eq 'SingleFile') {
+        try {
+            # Ensure parent directory exists
+            $parentDir = Split-Path $Properties.destinationPath -Parent
+            if (-not (Test-Path $parentDir)) {
+                New-Item -ItemType Directory -Path $parentDir -Force | Out-Null
+            }
+
+            # Copy from asset source
+            $sourcePath = Join-Path $AssetBasePath $Properties.sourceAssetPath
+            if (-not (Test-Path $sourcePath)) {
+                return @{
+                    Success = $false
+                    Action = "Source asset not found: $sourcePath"
+                }
+            }
+
+            Copy-Item -Path $sourcePath -Destination $Properties.destinationPath -Force
+
+            return @{
+                Success = $true
+                Action = "Copied file to $($Properties.destinationPath)"
+            }
+        } catch {
+            return @{
+                Success = $false
+                Action = "Failed to copy file: $($_.Exception.Message)"
+            }
+        }
+    }
+
+    # MultipleFiles mode (default behavior for backward compatibility)
     # Ensure destination directory exists
     if (-not (Test-Path $Properties.destinationPath)) {
         New-Item -ItemType Directory -Path $Properties.destinationPath -Force | Out-Null
@@ -435,39 +478,6 @@ function Repair-ScheduledTaskExists {
         return @{
             Success = $false
             Action = "Failed to create scheduled task: $($_.Exception.Message)"
-        }
-    }
-}
-
-function Repair-FileContent {
-    param($Properties, $CheckName)
-
-    try {
-        # Ensure parent directory exists
-        $parentDir = Split-Path $Properties.path -Parent
-        if (-not (Test-Path $parentDir)) {
-            New-Item -ItemType Directory -Path $parentDir -Force | Out-Null
-        }
-
-        # Copy from asset source
-        $sourcePath = Join-Path $AssetBasePath $Properties.sourceAssetPath
-        if (-not (Test-Path $sourcePath)) {
-            return @{
-                Success = $false
-                Action = "Source asset not found: $sourcePath"
-            }
-        }
-
-        Copy-Item -Path $sourcePath -Destination $Properties.path -Force
-
-        return @{
-            Success = $true
-            Action = "Copied file to $($Properties.path)"
-        }
-    } catch {
-        return @{
-            Success = $false
-            Action = "Failed to copy file: $($_.Exception.Message)"
         }
     }
 }
@@ -1119,13 +1129,23 @@ foreach ($check in $Config.checks) {
             "Application" { Repair-Application -Properties $check.properties -CheckName $check.name }
             "FolderEmpty" { Repair-FolderEmpty -Properties $check.properties -CheckName $check.name }
             "ShortcutsAllowList" { Repair-ShortcutsAllowList -Properties $check.properties -CheckName $check.name }
-            "FolderHasFiles" { Repair-FolderHasFiles -Properties $check.properties -CheckName $check.name }
+            "FolderExists" { Repair-FolderExists -Properties $check.properties -CheckName $check.name }
+            # FolderHasFiles renamed to FolderExists - backward compatibility
+            "FolderHasFiles" { Repair-FolderExists -Properties $check.properties -CheckName $check.name }
             "FilesExist" { Repair-FilesExist -Properties $check.properties -CheckName $check.name }
             "ShortcutExists" { Repair-ShortcutExists -Properties $check.properties -CheckName $check.name }
             "AssignedAccess" { Repair-AssignedAccess -Properties $check.properties -CheckName $check.name }
             "RegistryValue" { Repair-RegistryValue -Properties $check.properties -CheckName $check.name }
             "ScheduledTaskExists" { Repair-ScheduledTaskExists -Properties $check.properties -CheckName $check.name }
-            "FileContent" { Repair-FileContent -Properties $check.properties -CheckName $check.name }
+            # FileContent is now merged into FilesExist - redirect for backward compatibility
+            "FileContent" {
+                $mappedProps = @{
+                    mode = 'SingleFile'
+                    destinationPath = $check.properties.path
+                    sourceAssetPath = $check.properties.sourceAssetPath
+                }
+                Repair-FilesExist -Properties $mappedProps -CheckName $check.name
+            }
             "ServiceRunning" { Repair-ServiceRunning -Properties $check.properties -CheckName $check.name }
             "PrinterInstalled" { Repair-PrinterInstalled -Properties $check.properties -CheckName $check.name }
             "DriverInstalled" { Repair-DriverInstalled -Properties $check.properties -CheckName $check.name }

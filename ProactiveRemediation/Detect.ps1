@@ -155,22 +155,26 @@ function Test-ShortcutsAllowList {
     return @{ Passed = $true; Issue = $null }
 }
 
-function Test-FolderHasFiles {
+function Test-FolderExists {
     param($Properties)
 
     if (-not (Test-Path $Properties.path)) {
         return @{
             Passed = $false
-            Issue = "Directory does not exist: $($Properties.path)"
+            Issue = "Folder does not exist: $($Properties.path)"
         }
     }
 
-    $fileCount = (Get-ChildItem -Path $Properties.path -File -ErrorAction SilentlyContinue).Count
+    # If minimumFileCount is 0 or not specified, just check folder exists
+    $minCount = if ($Properties.minimumFileCount) { $Properties.minimumFileCount } else { 0 }
 
-    if ($fileCount -lt $Properties.minimumFileCount) {
-        return @{
-            Passed = $false
-            Issue = "Directory has $fileCount file(s), minimum required: $($Properties.minimumFileCount)"
+    if ($minCount -gt 0) {
+        $fileCount = (Get-ChildItem -Path $Properties.path -File -ErrorAction SilentlyContinue).Count
+        if ($fileCount -lt $minCount) {
+            return @{
+                Passed = $false
+                Issue = "Folder has $fileCount file(s), minimum required: $minCount"
+            }
         }
     }
 
@@ -180,6 +184,18 @@ function Test-FolderHasFiles {
 function Test-FilesExist {
     param($Properties)
 
+    # Handle SingleFile mode (legacy FileContent behavior)
+    if ($Properties.mode -eq 'SingleFile') {
+        if (-not (Test-Path $Properties.destinationPath)) {
+            return @{
+                Passed = $false
+                Issue = "File does not exist: $($Properties.destinationPath)"
+            }
+        }
+        return @{ Passed = $true; Issue = $null }
+    }
+
+    # MultipleFiles mode (default behavior for backward compatibility)
     if (-not (Test-Path $Properties.destinationPath)) {
         return @{
             Passed = $false
@@ -363,21 +379,6 @@ function Test-ScheduledTaskExists {
         }
     }
 
-    return @{ Passed = $true; Issue = $null }
-}
-
-function Test-FileContent {
-    param($Properties)
-
-    if (-not (Test-Path $Properties.path)) {
-        return @{
-            Passed = $false
-            Issue = "File does not exist: $($Properties.path)"
-        }
-    }
-
-    # For file content checks, we just verify the file exists
-    # More advanced: compare hash with source asset
     return @{ Passed = $true; Issue = $null }
 }
 
@@ -874,13 +875,23 @@ foreach ($check in $Config.checks) {
             "Application" { Test-Application -Properties $check.properties }
             "FolderEmpty" { Test-FolderEmpty -Properties $check.properties }
             "ShortcutsAllowList" { Test-ShortcutsAllowList -Properties $check.properties }
-            "FolderHasFiles" { Test-FolderHasFiles -Properties $check.properties }
+            "FolderExists" { Test-FolderExists -Properties $check.properties }
+            # FolderHasFiles renamed to FolderExists - backward compatibility
+            "FolderHasFiles" { Test-FolderExists -Properties $check.properties }
             "FilesExist" { Test-FilesExist -Properties $check.properties }
             "ShortcutExists" { Test-ShortcutExists -Properties $check.properties }
             "AssignedAccess" { Test-AssignedAccess -Properties $check.properties }
             "RegistryValue" { Test-RegistryValue -Properties $check.properties }
             "ScheduledTaskExists" { Test-ScheduledTaskExists -Properties $check.properties }
-            "FileContent" { Test-FileContent -Properties $check.properties }
+            # FileContent is now merged into FilesExist - redirect for backward compatibility
+            "FileContent" {
+                $mappedProps = @{
+                    mode = 'SingleFile'
+                    destinationPath = $check.properties.path
+                    sourceAssetPath = $check.properties.sourceAssetPath
+                }
+                Test-FilesExist -Properties $mappedProps
+            }
             "ServiceRunning" { Test-ServiceRunning -Properties $check.properties }
             "PrinterInstalled" { Test-PrinterInstalled -Properties $check.properties }
             "DriverInstalled" { Test-DriverInstalled -Properties $check.properties }

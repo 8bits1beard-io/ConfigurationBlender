@@ -49,16 +49,18 @@ Create complex configurations through a simple web interface - no coding require
 - Detailed JSON logs for compliance audits
 - Version control and rollback support
 
-### 17 Check Types
+### 16 Check Types
 | Type | Example |
 |------|---------|
 | `Application` | Install Git or remove unwanted browsers |
 | `RegistryValue` | Windows 11 Start Menu alignment |
 | `ShortcutExists` | Employee portal shortcuts |
+| `ShortcutsAllowList` | Kiosk desktop control |
 | `ScheduledTaskExists` | Daily 3 AM restart for updates |
 | `AssignedAccess` | Kiosk mode enforcement |
 | `FolderEmpty` | Desktop cleanup |
-| `FilesExist` | Deploy custom assets |
+| `FolderExists` | Ensure folders exist with optional file count |
+| `FilesExist` | Deploy files (single or multiple) |
 | `ServiceRunning` | Ensure Print Spooler is running |
 | `PrinterInstalled` | Deploy network printers |
 | `DriverInstalled` | Install device drivers |

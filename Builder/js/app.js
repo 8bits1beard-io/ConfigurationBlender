@@ -1,5 +1,6 @@
 /* ============================================================================
    Configuration Blender - Main Application
+   Accessibility Enhanced - WCAG 2.1/2.2 AA Compliant
    ============================================================================ */
 
 // Global state
@@ -20,6 +21,7 @@ const checkDependencies = {
 // ============================================================================
 
 document.addEventListener('DOMContentLoaded', () => {
+    // Set today's date
     document.getElementById('configDate').value = new Date().toISOString().split('T')[0];
     updatePreview();
 
@@ -30,6 +32,9 @@ document.addEventListener('DOMContentLoaded', () => {
             e.returnValue = '';
         }
     });
+
+    // Set up check list keyboard navigation
+    setupCheckListAccessibility();
 });
 
 // ============================================================================
@@ -38,12 +43,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
 function markUnsaved() {
     hasUnsavedChanges = true;
-    document.getElementById('unsavedIndicator').classList.add('visible');
+    const indicator = document.getElementById('unsavedIndicator');
+    indicator.classList.add('visible');
+    indicator.setAttribute('aria-hidden', 'false');
 }
 
 function markSaved() {
     hasUnsavedChanges = false;
-    document.getElementById('unsavedIndicator').classList.remove('visible');
+    const indicator = document.getElementById('unsavedIndicator');
+    indicator.classList.remove('visible');
+    indicator.setAttribute('aria-hidden', 'true');
 }
 
 // ============================================================================
@@ -68,7 +77,7 @@ function updatePreview() {
 }
 
 // ============================================================================
-// Check List Rendering
+// Check List Rendering - Accessible
 // ============================================================================
 
 function renderChecksList(filterText = '') {
@@ -77,23 +86,31 @@ function renderChecksList(filterText = '') {
     countEl.textContent = checks.length;
 
     if (checks.length === 0) {
-        list.innerHTML = '<div style="padding: 2rem; text-align: center; color: #666;">No checks added yet. Click "Add Check" to begin.</div>';
+        list.innerHTML = `
+            <div class="editor-placeholder" role="status">
+                <span>No checks added yet.</span><br>
+                <span>Click "Add Check" to begin.</span>
+            </div>`;
     } else {
         const filteredChecks = filterText
             ? checks.map((check, index) => ({ check, index })).filter(({ check }) =>
                 check.name.toLowerCase().includes(filterText.toLowerCase()) ||
                 check.type.toLowerCase().includes(filterText.toLowerCase()) ||
-                check.id.toLowerCase().includes(filterText.toLowerCase())
+                String(check.id).toLowerCase().includes(filterText.toLowerCase())
             )
             : checks.map((check, index) => ({ check, index }));
 
         if (filteredChecks.length === 0) {
-            list.innerHTML = '<div style="padding: 2rem; text-align: center; color: #666;">No checks match your search.</div>';
+            list.innerHTML = `<div class="editor-placeholder" role="status">No checks match your search.</div>`;
         } else {
             list.innerHTML = filteredChecks.map(({ check, index }) => `
                 <div class="check-item ${!check.enabled ? 'disabled' : ''}"
+                     role="option"
+                     tabindex="0"
                      draggable="true"
                      data-index="${index}"
+                     aria-selected="false"
+                     aria-label="${escapeHtml(check.name)}, ${check.type}, ${check.enabled ? 'enabled' : 'disabled'}"
                      ondragstart="handleDragStart(event, ${index})"
                      ondragover="handleDragOver(event)"
                      ondragenter="handleDragEnter(event)"
@@ -101,14 +118,20 @@ function renderChecksList(filterText = '') {
                      ondrop="handleDrop(event, ${index})"
                      ondragend="handleDragEnd(event)"
                      onclick="selectCheck(${index})"
-                     ondblclick="editCheck(${index})">
-                    <span class="drag-handle" title="Drag to reorder">⋮⋮</span>
-                    <span class="check-order">${index + 1}</span>
+                     ondblclick="editCheck(${index})"
+                     onkeydown="handleCheckItemKeydown(event, ${index})">
+                    <span class="drag-handle" title="Drag to reorder" aria-hidden="true">&#8942;&#8942;</span>
+                    <span class="check-order" aria-hidden="true">${index + 1}</span>
                     <div class="check-info">
                         <div class="check-name">${escapeHtml(check.name)}</div>
-                        <span class="check-type ${getCheckTypeCategory(check.type)}">${check.type}</span>${!check.enabled ? '<span class="check-type disabled-badge">Off</span>' : ''}
+                        <span class="check-type ${getCheckTypeCategory(check.type)}" translate="no">${escapeHtml(check.type)}</span>
+                        ${!check.enabled ? '<span class="check-type disabled-badge">Off</span>' : ''}
                     </div>
-                    <button class="btn btn-danger btn-sm" onclick="event.stopPropagation(); deleteCheck(${index})" title="Delete">×</button>
+                    <button type="button"
+                            class="btn btn-danger btn-sm"
+                            onclick="event.stopPropagation(); deleteCheck(${index})"
+                            title="Delete"
+                            aria-label="Delete ${escapeHtml(check.name)}">&#215;</button>
                 </div>
             `).join('');
         }
@@ -122,13 +145,52 @@ function renderChecksList(filterText = '') {
     }
 }
 
+/**
+ * Handle keyboard navigation within check items
+ */
+function handleCheckItemKeydown(event, index) {
+    switch (event.key) {
+        case 'Enter':
+        case ' ':
+            event.preventDefault();
+            selectCheck(index);
+            break;
+        case 'Delete':
+        case 'Backspace':
+            if (event.shiftKey) {
+                event.preventDefault();
+                deleteCheck(index);
+            }
+            break;
+        case 'e':
+        case 'E':
+            if (event.ctrlKey || event.metaKey) {
+                event.preventDefault();
+                editCheck(index);
+            }
+            break;
+    }
+}
+
+/**
+ * Set up accessibility features for the check list
+ */
+function setupCheckListAccessibility() {
+    const list = document.getElementById('checksList');
+    if (!list) return;
+
+    list.setAttribute('role', 'listbox');
+    list.setAttribute('aria-label', 'Configuration checks list');
+}
+
 // ============================================================================
 // Utility Functions
 // ============================================================================
 
 function escapeHtml(text) {
+    if (text === null || text === undefined) return '';
     const div = document.createElement('div');
-    div.textContent = text;
+    div.textContent = String(text);
     return div.innerHTML;
 }
 
@@ -136,9 +198,8 @@ function getCheckTypeCategory(type) {
     const categoryMap = {
         'Application': 'cat-applications',
         'FolderEmpty': 'cat-files',
-        'FolderHasFiles': 'cat-files',
+        'FolderExists': 'cat-files',
         'FilesExist': 'cat-files',
-        'FileContent': 'cat-files',
         'ShortcutExists': 'cat-shortcuts',
         'ShortcutsAllowList': 'cat-shortcuts',
         'RegistryValue': 'cat-registry',
@@ -158,6 +219,16 @@ function getCheckTypeCategory(type) {
 function filterChecks() {
     const searchText = document.getElementById('checksSearch').value;
     renderChecksList(searchText);
+
+    // Announce results to screen readers
+    const count = checks.filter(check =>
+        check.name.toLowerCase().includes(searchText.toLowerCase()) ||
+        check.type.toLowerCase().includes(searchText.toLowerCase())
+    ).length;
+
+    if (typeof announce === 'function') {
+        announce(`${count} checks found`);
+    }
 }
 
 // ============================================================================
@@ -172,7 +243,13 @@ function moveCheck(index, direction) {
     checks.splice(newIndex, 0, removed);
     markUnsaved();
     renderChecksList();
-    showStatus(`Check moved ${direction < 0 ? 'up' : 'down'}`, 'success');
+
+    const message = direction < 0 ? 'Check moved up' : 'Check moved down';
+    showStatus(message, 'success');
+
+    if (typeof announce === 'function') {
+        announce(message);
+    }
 }
 
 function handleDragStart(e, index) {
@@ -208,7 +285,12 @@ function handleDrop(e, dropIndex) {
         checks.splice(dropIndex, 0, removed);
         markUnsaved();
         renderChecksList();
+
         showStatus('Check reordered', 'success');
+
+        if (typeof announce === 'function') {
+            announce('Check reordered');
+        }
     }
 }
 
@@ -248,57 +330,86 @@ function checkDependencyWarnings() {
 
     if (warnings.length > 0) {
         warningsContainer.innerHTML = warnings.map(w =>
-            `<div class="dependency-warning">${escapeHtml(w)}</div>`
+            `<div class="dependency-warning" role="alert">${escapeHtml(w)}</div>`
         ).join('');
+
+        if (typeof announceWarning === 'function') {
+            announceWarning(`${warnings.length} dependency warning${warnings.length > 1 ? 's' : ''}`);
+        }
     } else {
         warningsContainer.innerHTML = '';
     }
 }
 
 // ============================================================================
-// Check Modal Management
+// Check Modal Management - Accessible
 // ============================================================================
 
 function showAddCheckModal() {
     editingCheckIndex = -1;
+
     document.getElementById('checkModalTitle').textContent = 'Add Check';
     document.getElementById('checkType').value = '';
     document.getElementById('checkName').value = '';
     document.getElementById('checkEnabled').checked = true;
     document.getElementById('checkProperties').innerHTML = '';
-    document.getElementById('checkModal').classList.add('active');
+
+    const modal = document.getElementById('checkModal');
+    modal.classList.add('active');
+
+    if (typeof saveFocus === 'function') saveFocus();
+
+    setTimeout(() => {
+        const firstInput = modal.querySelector('select, input, button');
+        if (firstInput) firstInput.focus();
+    }, 100);
 }
 
 function closeCheckModal() {
     document.getElementById('checkModal').classList.remove('active');
     editingCheckIndex = -1;
+
+    if (typeof restoreFocus === 'function') restoreFocus();
 }
 
 function selectCheck(index) {
     editingCheckIndex = index;
     const check = checks[index];
 
-    // Highlight selected item in list
+    // Update ARIA selected state
     document.querySelectorAll('.check-item').forEach((el, i) => {
-        el.classList.toggle('selected', parseInt(el.dataset.index) === index);
+        const isSelected = parseInt(el.dataset.index) === index;
+        el.classList.toggle('selected', isSelected);
+        el.setAttribute('aria-selected', isSelected.toString());
     });
 
     // Show preview in middle panel
     showCheckPreview(check, index);
+
+    if (typeof announce === 'function') {
+        announce(`Selected ${check.name}`);
+    }
 }
 
 function editCheck(index) {
     editingCheckIndex = index;
     const check = checks[index];
 
-    // Open modal for editing
     document.getElementById('checkModalTitle').textContent = 'Edit Check';
     document.getElementById('checkType').value = check.type;
     document.getElementById('checkName').value = check.name;
     document.getElementById('checkEnabled').checked = check.enabled;
     showCheckProperties();
     populateCheckProperties(check.properties);
-    document.getElementById('checkModal').classList.add('active');
+
+    const modal = document.getElementById('checkModal');
+    modal.classList.add('active');
+
+    if (typeof saveFocus === 'function') saveFocus();
+
+    setTimeout(() => {
+        document.getElementById('checkName').focus();
+    }, 100);
 }
 
 function showCheckPreview(check, index) {
@@ -308,28 +419,33 @@ function showCheckPreview(check, index) {
     editorTitle.textContent = `Check #${index + 1}: ${check.name}`;
 
     const categoryClass = getCheckTypeCategory(check.type);
+
     let propsHtml = '';
     for (const [key, value] of Object.entries(check.properties || {})) {
         const displayValue = Array.isArray(value) ? value.join(', ') : value;
-        propsHtml += `<div class="preview-prop"><span class="preview-prop-key">${key}:</span> <span class="preview-prop-value">${escapeHtml(String(displayValue))}</span></div>`;
+        propsHtml += `
+            <div class="preview-prop">
+                <span class="preview-prop-key" translate="no">${escapeHtml(key)}:</span>
+                <span class="preview-prop-value" translate="no">${escapeHtml(String(displayValue))}</span>
+            </div>`;
     }
 
     editorContent.innerHTML = `
-        <div class="check-preview">
-            <div class="preview-header">
-                <span class="check-type ${categoryClass}">${check.type}</span>
+        <article class="check-preview" aria-labelledby="editorTitle">
+            <header class="preview-header">
+                <span class="check-type ${categoryClass}" translate="no">${escapeHtml(check.type)}</span>
                 ${!check.enabled ? '<span class="check-type disabled-badge">Disabled</span>' : ''}
-            </div>
-            <div class="preview-section">
+            </header>
+            <section class="preview-section">
                 <h4>Properties</h4>
-                ${propsHtml || '<div class="preview-empty">No properties defined</div>'}
-            </div>
-            <div class="preview-actions">
-                <button class="btn btn-primary" onclick="editCheck(${index})">Edit Check</button>
-                <button class="btn btn-secondary" onclick="duplicateCheck(${index})">Duplicate</button>
-                <button class="btn btn-danger" onclick="deleteCheck(${index})">Delete</button>
-            </div>
-        </div>
+                ${propsHtml || '<p class="preview-empty">No properties defined</p>'}
+            </section>
+            <footer class="preview-actions">
+                <button type="button" class="btn btn-primary" onclick="editCheck(${index})">Edit Check</button>
+                <button type="button" class="btn btn-secondary" onclick="duplicateCheck(${index})">Duplicate</button>
+                <button type="button" class="btn btn-danger" onclick="deleteCheck(${index})">Delete</button>
+            </footer>
+        </article>
     `;
 }
 
@@ -341,7 +457,12 @@ function duplicateCheck(index) {
     checks.push(copy);
     markUnsaved();
     renderChecksList();
+
     showStatus('Check duplicated', 'success');
+
+    if (typeof announceSuccess === 'function') {
+        announceSuccess('Check duplicated');
+    }
 }
 
 function deleteCheck(index) {
@@ -349,7 +470,21 @@ function deleteCheck(index) {
         checks.splice(index, 1);
         markUnsaved();
         renderChecksList();
+
+        // Reset editor panel
+        const editorTitle = document.getElementById('editorTitle');
+        const editorContent = document.getElementById('editorContent');
+        editorTitle.textContent = 'Check Editor';
+        editorContent.innerHTML = `
+            <div class="editor-placeholder" role="status">
+                <span>Select a check to edit, or click "Add Check" to create a new one.</span>
+            </div>`;
+
         showStatus('Check deleted', 'warning');
+
+        if (typeof announceWarning === 'function') {
+            announceWarning('Check deleted');
+        }
     }
 }
 
@@ -370,25 +505,92 @@ function saveCheck() {
 
     if (!type || !name) {
         showStatus('Please fill in all required fields (Type, Display Name)', 'error');
+
+        if (typeof announceError === 'function') {
+            announceError('Please fill in all required fields');
+        }
+
+        if (!type) {
+            document.getElementById('checkType').focus();
+        } else if (!name) {
+            document.getElementById('checkName').focus();
+        }
         return;
     }
 
     const id = editingCheckIndex >= 0 ? checks[editingCheckIndex].id : getNextCheckId();
+    const properties = getCheckProperties();
 
     const check = {
         id: id,
         name: name,
         type: type,
         enabled: enabled,
-        properties: getCheckProperties()
+        properties: properties
     };
 
+    // Check for missing icon dependency on ShortcutExists
+    if (type === 'ShortcutExists' && properties.iconLocation) {
+        const iconPath = properties.iconLocation.toLowerCase();
+        // Only check if not a system icon
+        if (!iconPath.includes('system32') && !iconPath.includes('windows') && !iconPath.includes(',')) {
+            const iconFileName = properties.iconLocation.split('\\').pop();
+            const hasIconCheck = checks.some(c => {
+                if (c.type !== 'FilesExist') return false;
+                if (c.properties.mode === 'SingleFile') {
+                    return c.properties.destinationPath?.toLowerCase() === properties.iconLocation.toLowerCase();
+                } else {
+                    const files = c.properties.files || [];
+                    return files.some(f => f.toLowerCase() === iconFileName.toLowerCase());
+                }
+            });
+
+            if (!hasIconCheck) {
+                const addIcon = confirm(
+                    `This shortcut uses a custom icon "${iconFileName}" but no FilesExist check deploys this icon.\n\n` +
+                    `Would you like to add a FilesExist check for this icon?\n\n` +
+                    `Click OK to add the icon check, or Cancel to continue without it.`
+                );
+
+                if (addIcon) {
+                    // Extract folder path from icon location
+                    const iconFolder = properties.iconLocation.substring(0, properties.iconLocation.lastIndexOf('\\'));
+                    const iconCheck = {
+                        id: getNextCheckId(),
+                        name: `Deploy ${iconFileName}`,
+                        type: 'FilesExist',
+                        enabled: true,
+                        properties: {
+                            mode: 'MultipleFiles',
+                            destinationPath: iconFolder,
+                            files: [iconFileName],
+                            sourceAssetPath: 'Icons'
+                        }
+                    };
+                    // Insert before the shortcut check
+                    const insertIndex = editingCheckIndex >= 0 ? editingCheckIndex : checks.length;
+                    checks.splice(insertIndex, 0, iconCheck);
+                    // Adjust editing index since we inserted before
+                    if (editingCheckIndex >= 0) {
+                        editingCheckIndex++;
+                    }
+                }
+            }
+        }
+    }
+
+    let message;
     if (editingCheckIndex >= 0) {
         checks[editingCheckIndex] = check;
-        showStatus('Check updated successfully', 'success');
+        message = 'Check updated successfully';
     } else {
         checks.push(check);
-        showStatus('Check added successfully', 'success');
+        message = 'Check added successfully';
+    }
+
+    showStatus(message, 'success');
+    if (typeof announceSuccess === 'function') {
+        announceSuccess(message);
     }
 
     markUnsaved();
@@ -401,35 +603,126 @@ function saveCheck() {
 // ============================================================================
 
 function showAbout() {
-    document.getElementById('aboutModal').classList.add('active');
+    const modal = document.getElementById('aboutModal');
+    modal.classList.add('active');
+
+    if (typeof saveFocus === 'function') saveFocus();
+
+    setTimeout(() => {
+        const closeBtn = modal.querySelector('.close-btn');
+        if (closeBtn) closeBtn.focus();
+    }, 100);
 }
 
 function closeAbout() {
     document.getElementById('aboutModal').classList.remove('active');
+    if (typeof restoreFocus === 'function') restoreFocus();
 }
 
 // ============================================================================
-// Status Messages
+// Settings Modal
+// ============================================================================
+
+function showSettings() {
+    const modal = document.getElementById('settingsModal');
+    const content = document.getElementById('settingsContent');
+
+    // Populate settings content
+    if (typeof createAccessibilitySettingsHTML === 'function') {
+        content.innerHTML = createAccessibilitySettingsHTML();
+    } else {
+        content.innerHTML = '<p>Settings not available</p>';
+    }
+
+    modal.classList.add('active');
+
+    if (typeof saveFocus === 'function') saveFocus();
+
+    setTimeout(() => {
+        const firstInput = modal.querySelector('input, select, button:not(.close-btn)');
+        if (firstInput) firstInput.focus();
+    }, 100);
+}
+
+function closeSettings() {
+    document.getElementById('settingsModal').classList.remove('active');
+    if (typeof restoreFocus === 'function') restoreFocus();
+}
+
+// ============================================================================
+// Status Messages - Accessible
 // ============================================================================
 
 function showStatus(message, type = 'success') {
     const statusBar = document.getElementById('statusBar');
     statusBar.textContent = message;
     statusBar.className = 'status-bar';
-    if (type === 'error') statusBar.classList.add('error');
-    if (type === 'warning') statusBar.classList.add('warning');
+
+    if (type === 'error') {
+        statusBar.classList.add('error');
+        statusBar.setAttribute('role', 'alert');
+    } else if (type === 'warning') {
+        statusBar.classList.add('warning');
+        statusBar.setAttribute('role', 'alert');
+    } else {
+        statusBar.setAttribute('role', 'status');
+    }
+
     statusBar.style.display = 'block';
+
     setTimeout(() => {
         statusBar.style.display = 'none';
-    }, 3000);
+    }, type === 'error' ? 5000 : 3000);
 }
 
 // ============================================================================
-// Modal Click Handler
+// Toast Notifications
+// ============================================================================
+
+function showToast(message, type = 'info', title = '') {
+    const container = document.getElementById('toastContainer');
+    if (!container) return;
+
+    const toast = document.createElement('div');
+    toast.className = `toast ${type}`;
+    toast.setAttribute('role', type === 'error' ? 'alert' : 'status');
+    toast.setAttribute('aria-live', type === 'error' ? 'assertive' : 'polite');
+
+    const icons = {
+        success: '&#10003;',
+        error: '!',
+        warning: '&#9888;',
+        info: 'i'
+    };
+
+    toast.innerHTML = `
+        <span class="toast-icon" aria-hidden="true">${icons[type] || icons.info}</span>
+        <div class="toast-content">
+            ${title ? `<div class="toast-title">${escapeHtml(title)}</div>` : ''}
+            <div class="toast-message">${escapeHtml(message)}</div>
+        </div>
+        <button type="button" class="toast-close" onclick="this.parentElement.remove()" aria-label="Dismiss">&#215;</button>
+    `;
+
+    container.appendChild(toast);
+
+    setTimeout(() => {
+        if (toast.parentElement) {
+            toast.remove();
+        }
+    }, type === 'error' ? 8000 : 5000);
+}
+
+// ============================================================================
+// Modal Click Handler - Close on Backdrop Click
 // ============================================================================
 
 window.onclick = (event) => {
-    if (event.target.id === 'aboutModal') {
-        event.target.classList.remove('active');
-    }
+    const modals = ['aboutModal', 'settingsModal'];
+    modals.forEach(modalId => {
+        if (event.target.id === modalId) {
+            event.target.classList.remove('active');
+            if (typeof restoreFocus === 'function') restoreFocus();
+        }
+    });
 };
