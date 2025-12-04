@@ -210,7 +210,7 @@ graph LR
 | `RegistryValue` | Set registry values | `path`, `name`, `value`, `type` |
 | `DriverInstalled` | Install device drivers | `driverName`, `driverClass`, `sourceAssetPath`, `minimumVersion` |
 | `PrinterInstalled` | Configure network printers | `printerName`, `driverName`, `printerIP`, `portName`, `portType` |
-| `NetworkAdapterConfiguration` | Configure network adapters | `adapterName`, `staticIPAddress`, `dnsServers` |
+| `NetworkAdapterConfiguration` | Configure network adapters (DHCP to static) | `identifyByCurrentSubnet`, `excludeSubnets`, `staticIPAddress`, `dnsServers` |
 | `ServiceRunning` | Ensure services are running | `serviceName`, `startupType`, `ensureRunning` |
 | `ScheduledTaskExists` | Create scheduled tasks | `taskName`, `execute`, `arguments`, `trigger`, `principal` |
 | `WindowsFeature` | Enable/disable Windows features | `featureName`, `state` |
@@ -407,6 +407,66 @@ flowchart TD
     "driverClass": "Printer",
     "sourceAssetPath": "Drivers\\HP_UPD\\hpcu270u.inf",
     "minimumVersion": "7.0.0.0"
+  }
+}
+```
+</details>
+
+<details>
+<summary><strong>NetworkAdapterConfiguration (Subnet-based DHCP to Static)</strong></summary>
+
+Use this mode when devices have dual NICs and you need to convert a private equipment network from DHCP to static IP while protecting the corporate network.
+
+```json
+{
+  "type": "NetworkAdapterConfiguration",
+  "name": "Private Equipment Network",
+  "properties": {
+    "identifyByCurrentSubnet": "192.168.0.0/24",
+    "excludeSubnets": ["10.0.0.0/8", "172.16.0.0/12"],
+    "staticIPAddress": "192.168.0.100",
+    "subnetPrefixLength": 24,
+    "defaultGateway": "",
+    "dnsServers": [],
+    "registerInDns": false,
+    "interfaceMetric": 9999,
+    "networkCategory": "Private"
+  }
+}
+```
+
+**Key Properties:**
+- `identifyByCurrentSubnet`: Find wired adapter with IP in this range (CIDR notation)
+- `excludeSubnets`: Never modify adapters in these subnets (corporate protection)
+- `defaultGateway`: Empty = no gateway (isolates network from routing)
+- `dnsServers`: Empty array = clear DNS (prevents DNS conflicts)
+- `registerInDns`: `false` = don't register in DNS
+- `interfaceMetric`: High value = low priority (corporate NIC wins routing)
+
+**Built-in Safeguards:**
+1. Only wired adapters (802.3) are considered
+2. Adapters with gateway outside target subnet are skipped
+3. Virtual adapters are ignored
+4. Excluded subnets are never touched
+</details>
+
+<details>
+<summary><strong>NetworkAdapterConfiguration (Traditional)</strong></summary>
+
+Use this mode when you know the adapter name, description, or MAC address.
+
+```json
+{
+  "type": "NetworkAdapterConfiguration",
+  "properties": {
+    "adapterName": "Ethernet 2",
+    "staticIPAddress": "192.168.1.50",
+    "subnetPrefixLength": 24,
+    "defaultGateway": "192.168.1.1",
+    "dnsServers": ["8.8.8.8", "8.8.4.4"],
+    "networkCategory": "Private",
+    "interfaceMetric": 10,
+    "ensureEnabled": true
   }
 }
 ```

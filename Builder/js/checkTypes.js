@@ -37,6 +37,23 @@ function toggleApplicationFields() {
     }
 }
 
+function toggleNetworkAdapterMode() {
+    const mode = document.getElementById('prop_identificationMode').value;
+    const traditionalFields = document.getElementById('traditionalAdapterFields');
+    const subnetFields = document.getElementById('subnetAdapterFields');
+    if (mode === 'subnet') {
+        traditionalFields.style.display = 'none';
+        traditionalFields.setAttribute('aria-hidden', 'true');
+        subnetFields.style.display = 'block';
+        subnetFields.setAttribute('aria-hidden', 'false');
+    } else {
+        traditionalFields.style.display = 'block';
+        traditionalFields.setAttribute('aria-hidden', 'false');
+        subnetFields.style.display = 'none';
+        subnetFields.setAttribute('aria-hidden', 'true');
+    }
+}
+
 function toggleFilesExistMode() {
     const mode = document.getElementById('prop_mode').value;
     const multipleFilesGroup = document.getElementById('multipleFilesGroup');
@@ -508,31 +525,57 @@ function getPropertiesFormForType(type) {
         case 'NetworkAdapterConfiguration':
             return `
                 <fieldset class="property-group">
-                    <legend>Adapter Identification (choose one)</legend>
-                    ${formGroup('prop_adapterName', 'Adapter Name',
-                        `<input type="text" id="prop_adapterName" placeholder="e.g., Ethernet 2">`,
-                        'Exact name as shown in Network Connections')}
-                    ${formGroup('prop_adapterDescription', 'Adapter Description (Alternative)',
-                        `<input type="text" id="prop_adapterDescription" placeholder="e.g., Intel(R) I211 Gigabit">`,
-                        'Partial match on hardware description')}
-                    ${formGroup('prop_macAddress', 'MAC Address (Alternative)',
-                        `<input type="text" id="prop_macAddress" placeholder="e.g., 00:1A:2B:3C:4D:5E or 00-1A-2B-3C-4D-5E" translate="no">`,
-                        'Physical address of the adapter', false, true)}
+                    <legend>Adapter Identification</legend>
+                    <div class="form-group">
+                        <label for="prop_identificationMode">Identification Mode</label>
+                        <select id="prop_identificationMode" onchange="toggleNetworkAdapterMode()">
+                            <option value="traditional">By Name, Description, or MAC</option>
+                            <option value="subnet">By Current Subnet (DHCP to Static)</option>
+                        </select>
+                        <small class="form-help">Subnet mode finds adapters by their current DHCP IP range</small>
+                    </div>
+                    <div id="traditionalAdapterFields">
+                        ${formGroup('prop_adapterName', 'Adapter Name',
+                            `<input type="text" id="prop_adapterName" placeholder="e.g., Ethernet 2">`,
+                            'Exact name as shown in Network Connections')}
+                        ${formGroup('prop_adapterDescription', 'Adapter Description (Alternative)',
+                            `<input type="text" id="prop_adapterDescription" placeholder="e.g., Intel(R) I211 Gigabit">`,
+                            'Partial match on hardware description')}
+                        ${formGroup('prop_macAddress', 'MAC Address (Alternative)',
+                            `<input type="text" id="prop_macAddress" placeholder="e.g., 00:1A:2B:3C:4D:5E or 00-1A-2B-3C-4D-5E" translate="no">`,
+                            'Physical address of the adapter', false, true)}
+                    </div>
+                    <div id="subnetAdapterFields" style="display: none;">
+                        ${formGroup('prop_identifyByCurrentSubnet', 'Target Subnet (CIDR)',
+                            `<input type="text" id="prop_identifyByCurrentSubnet" placeholder="e.g., 192.168.0.0/24" translate="no">`,
+                            'Find wired adapter with IP in this subnet', true, true)}
+                        ${formGroup('prop_excludeSubnets', 'Exclude Subnets (safety, one per line)',
+                            `<textarea id="prop_excludeSubnets" rows="2" placeholder="10.0.0.0/8&#10;172.16.0.0/12" translate="no"></textarea>`,
+                            'Corporate subnets that should NEVER be modified', false, true)}
+                        <div class="info-box">
+                            <strong>Safeguards:</strong> Only wired adapters are checked. Adapters with a gateway outside the target subnet are skipped (protects corporate network).
+                        </div>
+                    </div>
                 </fieldset>
                 <fieldset class="property-group" translate="no">
                     <legend>IP Configuration</legend>
                     ${formGroup('prop_staticIPAddress', 'Static IP Address',
-                        `<input type="text" id="prop_staticIPAddress" placeholder="e.g., 192.168.1.100">`,
-                        'Leave empty to keep DHCP', false, true)}
+                        `<input type="text" id="prop_staticIPAddress" placeholder="e.g., 192.168.0.100">`,
+                        'The IP to assign to this adapter', true, true)}
                     ${formGroup('prop_subnetPrefixLength', 'Subnet Prefix Length',
                         `<input type="number" id="prop_subnetPrefixLength" placeholder="e.g., 24" min="1" max="32">`,
                         '24 = 255.255.255.0, 16 = 255.255.0.0', false, true)}
                     ${formGroup('prop_defaultGateway', 'Default Gateway',
-                        `<input type="text" id="prop_defaultGateway" placeholder="e.g., 192.168.1.1">`,
-                        '', false, true)}
+                        `<input type="text" id="prop_defaultGateway" placeholder="Leave empty for isolated network">`,
+                        'Empty = no gateway (prevents routing through this adapter)', false, true)}
+                </fieldset>
+                <fieldset class="property-group">
+                    <legend>DNS Configuration</legend>
                     ${formGroup('prop_dnsServers', 'DNS Servers (one per line)',
-                        `<textarea id="prop_dnsServers" rows="2" placeholder="8.8.8.8&#10;8.8.4.4"></textarea>`,
-                        '', false, true)}
+                        `<textarea id="prop_dnsServers" rows="2" placeholder="Leave empty to clear DNS"></textarea>`,
+                        'Empty = no DNS servers (prevents DNS queries on this adapter)', false, true)}
+                    ${checkboxGroup('prop_registerInDns', 'Register this connection in DNS', false)}
+                    <small class="form-help" style="margin-top: -0.5rem; display: block;">Disable for private equipment networks to prevent DNS conflicts</small>
                 </fieldset>
                 <fieldset class="property-group">
                     <legend>Network Profile & Settings</legend>
@@ -544,8 +587,8 @@ function getPropertiesFormForType(type) {
                         </select>`,
                         'Private enables network discovery; Public is more secure')}
                     ${formGroup('prop_interfaceMetric', 'Interface Metric (Priority)',
-                        `<input type="number" id="prop_interfaceMetric" placeholder="e.g., 10" min="1">`,
-                        'Lower = higher priority. Use to prefer one adapter over another.')}
+                        `<input type="number" id="prop_interfaceMetric" placeholder="e.g., 9999" min="1">`,
+                        'Higher = lower priority. Use 9999 for equipment networks so corporate NIC is preferred.')}
                     ${checkboxGroup('prop_ensureEnabled', 'Ensure Adapter is Enabled', true)}
                 </fieldset>
             `;
@@ -583,6 +626,18 @@ function populateCheckProperties(properties) {
     const ensureInstalledElement = document.getElementById('prop_ensureInstalled');
     if (ensureInstalledElement) {
         toggleApplicationFields();
+    }
+
+    // Handle NetworkAdapterConfiguration mode toggle
+    const idModeElement = document.getElementById('prop_identificationMode');
+    if (idModeElement) {
+        // Determine mode from properties
+        if (properties.identifyByCurrentSubnet) {
+            idModeElement.value = 'subnet';
+        } else {
+            idModeElement.value = 'traditional';
+        }
+        toggleNetworkAdapterMode();
     }
 }
 
@@ -718,20 +773,39 @@ function getCheckProperties() {
             if (pfxPass) properties.pfxPassword = pfxPass;
             break;
         case 'NetworkAdapterConfiguration':
-            const adapterName = document.getElementById('prop_adapterName').value;
-            if (adapterName) properties.adapterName = adapterName;
-            const adapterDesc = document.getElementById('prop_adapterDescription').value;
-            if (adapterDesc) properties.adapterDescription = adapterDesc;
-            const macAddr = document.getElementById('prop_macAddress').value;
-            if (macAddr) properties.macAddress = macAddr;
+            // Identification mode determines which fields to use
+            const idMode = document.getElementById('prop_identificationMode').value;
+            if (idMode === 'subnet') {
+                // Subnet-based identification
+                const targetSubnet = document.getElementById('prop_identifyByCurrentSubnet').value;
+                if (targetSubnet) properties.identifyByCurrentSubnet = targetSubnet;
+                const excludeText = document.getElementById('prop_excludeSubnets').value;
+                if (excludeText) {
+                    properties.excludeSubnets = excludeText.split('\n').map(s => s.trim()).filter(s => s);
+                }
+            } else {
+                // Traditional identification
+                const adapterName = document.getElementById('prop_adapterName').value;
+                if (adapterName) properties.adapterName = adapterName;
+                const adapterDesc = document.getElementById('prop_adapterDescription').value;
+                if (adapterDesc) properties.adapterDescription = adapterDesc;
+                const macAddr = document.getElementById('prop_macAddress').value;
+                if (macAddr) properties.macAddress = macAddr;
+            }
+            // IP Configuration
             const staticIP = document.getElementById('prop_staticIPAddress').value;
             if (staticIP) properties.staticIPAddress = staticIP;
             const prefixLen = document.getElementById('prop_subnetPrefixLength').value;
             if (prefixLen) properties.subnetPrefixLength = parseInt(prefixLen);
+            // Gateway: empty string means "no gateway" (important for isolated networks)
             const gateway = document.getElementById('prop_defaultGateway').value;
-            if (gateway) properties.defaultGateway = gateway;
+            properties.defaultGateway = gateway; // Include even if empty to indicate "no gateway"
+            // DNS: empty array means "clear DNS" (important for isolated networks)
             const dnsText = document.getElementById('prop_dnsServers').value;
-            if (dnsText) properties.dnsServers = dnsText.split('\n').filter(d => d.trim());
+            properties.dnsServers = dnsText ? dnsText.split('\n').map(d => d.trim()).filter(d => d) : [];
+            // DNS Registration
+            properties.registerInDns = document.getElementById('prop_registerInDns').checked;
+            // Network settings
             const netCategory = document.getElementById('prop_networkCategory').value;
             if (netCategory) properties.networkCategory = netCategory;
             const metric = document.getElementById('prop_interfaceMetric').value;

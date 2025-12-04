@@ -735,25 +735,105 @@ function Test-CertificateInstalled {
 function Test-NetworkAdapterConfiguration {
     param($Properties)
 
-    try {
-        # Find the adapter by name or description
-        $adapter = $null
-        if ($Properties.adapterName) {
-            $adapter = Get-NetAdapter | Where-Object { $_.Name -eq $Properties.adapterName } | Select-Object -First 1
-        } elseif ($Properties.adapterDescription) {
-            $adapter = Get-NetAdapter | Where-Object { $_.InterfaceDescription -like "*$($Properties.adapterDescription)*" } | Select-Object -First 1
-        } elseif ($Properties.macAddress) {
-            $normalizedMac = $Properties.macAddress -replace '[:-]', ''
-            $adapter = Get-NetAdapter | Where-Object { ($_.MacAddress -replace '[:-]', '') -eq $normalizedMac } | Select-Object -First 1
-        }
+    # Helper function to check if an IP is in a subnet (CIDR notation)
+    function Test-IPInSubnet {
+        param([string]$IPAddress, [string]$Subnet)
+        try {
+            $parts = $Subnet -split '/'
+            $networkAddress = $parts[0]
+            $prefixLength = [int]$parts[1]
 
-        if ($null -eq $adapter) {
-            $searchCriteria = if ($Properties.adapterName) { "name '$($Properties.adapterName)'" }
-                              elseif ($Properties.adapterDescription) { "description '$($Properties.adapterDescription)'" }
-                              else { "MAC '$($Properties.macAddress)'" }
-            return @{
-                Passed = $false
-                Issue = "Network adapter with $searchCriteria not found"
+            $ipBytes = [System.Net.IPAddress]::Parse($IPAddress).GetAddressBytes()
+            $networkBytes = [System.Net.IPAddress]::Parse($networkAddress).GetAddressBytes()
+
+            # Convert to UInt32 for bitwise operations (handle byte order)
+            [Array]::Reverse($ipBytes)
+            [Array]::Reverse($networkBytes)
+            $ipInt = [BitConverter]::ToUInt32($ipBytes, 0)
+            $networkInt = [BitConverter]::ToUInt32($networkBytes, 0)
+
+            # Create subnet mask
+            $mask = [uint32]::MaxValue -shl (32 - $prefixLength)
+
+            return (($ipInt -band $mask) -eq ($networkInt -band $mask))
+        } catch {
+            return $false
+        }
+    }
+
+    try {
+        $adapter = $null
+        $adapterIP = $null
+
+        # Mode 1: Identify adapter by current subnet (for DHCP-to-static conversion)
+        if ($Properties.identifyByCurrentSubnet) {
+            $targetSubnet = $Properties.identifyByCurrentSubnet
+
+            # Get all wired adapters that are up (safety: exclude Wi-Fi)
+            $wiredAdapters = Get-NetAdapter | Where-Object {
+                $_.Status -eq "Up" -and
+                $_.PhysicalMediaType -eq "802.3" -and
+                $_.Virtual -eq $false
+            }
+
+            foreach ($candidate in $wiredAdapters) {
+                $candidateIP = Get-NetIPAddress -InterfaceIndex $candidate.ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+                    Where-Object { $_.AddressState -eq "Preferred" } | Select-Object -First 1
+
+                if ($candidateIP -and (Test-IPInSubnet -IPAddress $candidateIP.IPAddress -Subnet $targetSubnet)) {
+                    # Check excludeSubnets safeguard
+                    if ($Properties.excludeSubnets) {
+                        $excluded = $false
+                        foreach ($excludeSubnet in $Properties.excludeSubnets) {
+                            if (Test-IPInSubnet -IPAddress $candidateIP.IPAddress -Subnet $excludeSubnet) {
+                                $excluded = $true
+                                break
+                            }
+                        }
+                        if ($excluded) { continue }
+                    }
+
+                    # Check gateway safeguard: skip if adapter has gateway outside target subnet
+                    $candidateConfig = Get-NetIPConfiguration -InterfaceIndex $candidate.ifIndex -ErrorAction SilentlyContinue
+                    $candidateGateway = ($candidateConfig.IPv4DefaultGateway | Select-Object -First 1).NextHop
+                    if ($candidateGateway -and -not (Test-IPInSubnet -IPAddress $candidateGateway -Subnet $targetSubnet)) {
+                        # Gateway points outside target subnet, likely corporate - skip
+                        continue
+                    }
+
+                    $adapter = $candidate
+                    $adapterIP = $candidateIP
+                    break
+                }
+            }
+
+            if ($null -eq $adapter) {
+                return @{
+                    Passed = $true
+                    Issue = $null
+                    # No adapter found in target subnet - this is OK, device may not have private network
+                }
+            }
+        }
+        # Mode 2: Traditional identification by name, description, or MAC
+        else {
+            if ($Properties.adapterName) {
+                $adapter = Get-NetAdapter | Where-Object { $_.Name -eq $Properties.adapterName } | Select-Object -First 1
+            } elseif ($Properties.adapterDescription) {
+                $adapter = Get-NetAdapter | Where-Object { $_.InterfaceDescription -like "*$($Properties.adapterDescription)*" } | Select-Object -First 1
+            } elseif ($Properties.macAddress) {
+                $normalizedMac = $Properties.macAddress -replace '[:-]', ''
+                $adapter = Get-NetAdapter | Where-Object { ($_.MacAddress -replace '[:-]', '') -eq $normalizedMac } | Select-Object -First 1
+            }
+
+            if ($null -eq $adapter) {
+                $searchCriteria = if ($Properties.adapterName) { "name '$($Properties.adapterName)'" }
+                                  elseif ($Properties.adapterDescription) { "description '$($Properties.adapterDescription)'" }
+                                  else { "MAC '$($Properties.macAddress)'" }
+                return @{
+                    Passed = $false
+                    Issue = "Network adapter with $searchCriteria not found"
+                }
             }
         }
 
@@ -767,14 +847,16 @@ function Test-NetworkAdapterConfiguration {
 
         # Get current IP configuration
         $ipConfig = Get-NetIPConfiguration -InterfaceIndex $adapterIndex -ErrorAction SilentlyContinue
-        $ipAddress = Get-NetIPAddress -InterfaceIndex $adapterIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($null -eq $adapterIP) {
+            $adapterIP = Get-NetIPAddress -InterfaceIndex $adapterIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue | Select-Object -First 1
+        }
 
         # Check static IP configuration
         if ($Properties.staticIPAddress) {
-            if ($null -eq $ipAddress) {
+            if ($null -eq $adapterIP) {
                 $issues += "No IPv4 address configured"
-            } elseif ($ipAddress.IPAddress -ne $Properties.staticIPAddress) {
-                $issues += "IP address mismatch: expected '$($Properties.staticIPAddress)', found '$($ipAddress.IPAddress)'"
+            } elseif ($adapterIP.IPAddress -ne $Properties.staticIPAddress) {
+                $issues += "IP address mismatch: expected '$($Properties.staticIPAddress)', found '$($adapterIP.IPAddress)'"
             }
 
             # Check if DHCP is disabled (should be for static IP)
@@ -785,26 +867,38 @@ function Test-NetworkAdapterConfiguration {
         }
 
         # Check subnet mask / prefix length
-        if ($Properties.subnetPrefixLength -and $ipAddress) {
-            if ($ipAddress.PrefixLength -ne $Properties.subnetPrefixLength) {
-                $issues += "Subnet prefix length mismatch: expected '$($Properties.subnetPrefixLength)', found '$($ipAddress.PrefixLength)'"
+        if ($Properties.subnetPrefixLength -and $adapterIP) {
+            if ($adapterIP.PrefixLength -ne $Properties.subnetPrefixLength) {
+                $issues += "Subnet prefix length mismatch: expected '$($Properties.subnetPrefixLength)', found '$($adapterIP.PrefixLength)'"
             }
         }
 
-        # Check default gateway
-        if ($Properties.defaultGateway) {
+        # Check default gateway - support explicit "none" via empty string or null
+        if ($Properties.PSObject.Properties.Name -contains 'defaultGateway') {
             $currentGateway = ($ipConfig.IPv4DefaultGateway | Select-Object -First 1).NextHop
-            if ($currentGateway -ne $Properties.defaultGateway) {
-                $issues += "Default gateway mismatch: expected '$($Properties.defaultGateway)', found '$currentGateway'"
+            $expectedGateway = $Properties.defaultGateway
+
+            if ([string]::IsNullOrEmpty($expectedGateway)) {
+                # No gateway should be set
+                if ($currentGateway) {
+                    $issues += "Gateway should not be configured, found '$currentGateway'"
+                }
+            } elseif ($currentGateway -ne $expectedGateway) {
+                $issues += "Default gateway mismatch: expected '$expectedGateway', found '$currentGateway'"
             }
         }
 
-        # Check DNS servers
-        if ($Properties.dnsServers -and $Properties.dnsServers.Count -gt 0) {
+        # Check DNS servers - support explicit "none" via empty array
+        if ($Properties.PSObject.Properties.Name -contains 'dnsServers') {
             $currentDns = (Get-DnsClientServerAddress -InterfaceIndex $adapterIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue).ServerAddresses
             $expectedDns = $Properties.dnsServers
 
-            if ($null -eq $currentDns -or $currentDns.Count -eq 0) {
+            if ($null -eq $expectedDns -or $expectedDns.Count -eq 0) {
+                # No DNS servers should be set
+                if ($currentDns -and $currentDns.Count -gt 0) {
+                    $issues += "DNS servers should not be configured, found '$($currentDns -join ', ')'"
+                }
+            } elseif ($null -eq $currentDns -or $currentDns.Count -eq 0) {
                 $issues += "No DNS servers configured"
             } else {
                 $dnsMatch = $true
@@ -833,6 +927,16 @@ function Test-NetworkAdapterConfiguration {
             $currentMetric = (Get-NetIPInterface -InterfaceIndex $adapterIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue).InterfaceMetric
             if ($currentMetric -ne $Properties.interfaceMetric) {
                 $issues += "Interface metric mismatch: expected '$($Properties.interfaceMetric)', found '$currentMetric'"
+            }
+        }
+
+        # Check DNS registration
+        if ($Properties.PSObject.Properties.Name -contains 'registerInDns') {
+            $dnsClient = Get-DnsClient -InterfaceIndex $adapterIndex -ErrorAction SilentlyContinue
+            $expectedRegister = $Properties.registerInDns
+            if ($dnsClient -and $dnsClient.RegisterThisConnectionsAddress -ne $expectedRegister) {
+                $state = if ($expectedRegister) { "enabled" } else { "disabled" }
+                $issues += "DNS registration should be $state"
             }
         }
 

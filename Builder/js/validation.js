@@ -84,19 +84,76 @@ function validateConfiguration() {
                 }
                 break;
             case 'NetworkAdapterConfiguration':
-                if (!check.properties.adapterName && !check.properties.adapterDescription && !check.properties.macAddress) {
+                // Check for valid identification method
+                const hasSubnetId = check.properties.identifyByCurrentSubnet;
+                const hasTraditionalId = check.properties.adapterName || check.properties.adapterDescription || check.properties.macAddress;
+
+                if (!hasSubnetId && !hasTraditionalId) {
                     errors.push({
-                        message: `Check "${check.name}": NetworkAdapterConfiguration requires adapterName, adapterDescription, or macAddress`,
+                        message: `Check "${check.name}": NetworkAdapterConfiguration requires either identifyByCurrentSubnet OR adapterName/adapterDescription/macAddress`,
                         checkIndex: index,
                         checkName: check.name
                     });
                 }
+
+                // Validate subnet format if using subnet identification
+                if (hasSubnetId) {
+                    const cidrPattern = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\/\d{1,2}$/;
+                    if (!cidrPattern.test(check.properties.identifyByCurrentSubnet)) {
+                        errors.push({
+                            message: `Check "${check.name}": identifyByCurrentSubnet must be in CIDR format (e.g., 192.168.0.0/24)`,
+                            checkIndex: index,
+                            checkName: check.name
+                        });
+                    }
+
+                    // Validate excludeSubnets format if present
+                    if (check.properties.excludeSubnets && check.properties.excludeSubnets.length > 0) {
+                        check.properties.excludeSubnets.forEach((subnet, i) => {
+                            if (!cidrPattern.test(subnet)) {
+                                errors.push({
+                                    message: `Check "${check.name}": excludeSubnets[${i}] "${subnet}" must be in CIDR format`,
+                                    checkIndex: index,
+                                    checkName: check.name
+                                });
+                            }
+                        });
+                    }
+
+                    // Require static IP when using subnet identification (the whole point is DHCP-to-static)
+                    if (!check.properties.staticIPAddress) {
+                        errors.push({
+                            message: `Check "${check.name}": staticIPAddress is required when using subnet-based identification`,
+                            checkIndex: index,
+                            checkName: check.name
+                        });
+                    }
+                }
+
                 if (check.properties.staticIPAddress && !check.properties.subnetPrefixLength) {
                     warnings.push({
                         message: `Check "${check.name}": Static IP configured without subnet prefix length (will default to /24)`,
                         checkIndex: index,
                         checkName: check.name
                     });
+                }
+
+                // Warn about isolated network configuration
+                if (hasSubnetId && check.properties.staticIPAddress) {
+                    if (check.properties.defaultGateway) {
+                        warnings.push({
+                            message: `Check "${check.name}": Gateway is set for a subnet-identified adapter. For isolated equipment networks, leave gateway empty to prevent routing issues.`,
+                            checkIndex: index,
+                            checkName: check.name
+                        });
+                    }
+                    if (check.properties.dnsServers && check.properties.dnsServers.length > 0) {
+                        warnings.push({
+                            message: `Check "${check.name}": DNS servers are set for a subnet-identified adapter. For isolated equipment networks, leave DNS empty to prevent DNS conflicts.`,
+                            checkIndex: index,
+                            checkName: check.name
+                        });
+                    }
                 }
                 break;
         }
