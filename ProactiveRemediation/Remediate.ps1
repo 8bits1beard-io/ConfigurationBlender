@@ -881,32 +881,26 @@ function Repair-DriverInstalled {
         # Note: pnputil exit codes are unreliable, so we verify success by checking if driver exists afterward
         $pnpOutput = & pnputil /add-driver "$sourcePath" /install 2>&1 | Out-String
 
-        # For printer drivers, verify using Get-PrinterDriver (the authoritative source)
+        # For printer drivers, register with print subsystem then verify
         if ($Properties.driverClass -eq "Printer") {
             # Give the system a moment to process the driver
             Start-Sleep -Seconds 2
 
-            # Check if printer driver is now registered
-            $printerDriver = Get-PrinterDriver -Name $Properties.driverName -ErrorAction SilentlyContinue
-
-            if (-not $printerDriver) {
-                # Driver not in print subsystem yet - try to add it
-                try {
-                    Add-PrinterDriver -Name $Properties.driverName -ErrorAction Stop
-                    Start-Sleep -Seconds 1
-                } catch {
-                    # Add-PrinterDriver failed - the driver name in the INF may not match what we expect
-                    # List available drivers to help diagnose
-                    $availableDrivers = Get-PrinterDriver -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name
-                    $driverList = if ($availableDrivers) { ($availableDrivers | Select-Object -First 10) -join ", " } else { "none" }
-                    return @{
-                        Success = $false
-                        Action = "Failed to register printer driver '$($Properties.driverName)': $($_.Exception.Message). Available drivers: $driverList. pnputil output: $pnpOutput"
-                    }
+            # Register driver with print subsystem
+            try {
+                Add-PrinterDriver -Name $Properties.driverName -ErrorAction Stop
+            } catch {
+                # Add-PrinterDriver failed - the driver name in the INF may not match what we expect
+                $availableDrivers = Get-PrinterDriver -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name
+                $driverList = if ($availableDrivers) { ($availableDrivers | Select-Object -First 10) -join ", " } else { "none" }
+                return @{
+                    Success = $false
+                    Action = "Failed to register printer driver '$($Properties.driverName)': $($_.Exception.Message). Available drivers: $driverList. pnputil output: $pnpOutput"
                 }
             }
 
-            # Final verification - is the driver now available?
+            # Verify driver is now available
+            Start-Sleep -Seconds 1
             $printerDriver = Get-PrinterDriver -Name $Properties.driverName -ErrorAction SilentlyContinue
 
             if ($printerDriver) {
@@ -915,12 +909,11 @@ function Repair-DriverInstalled {
                     Action = "Installed printer driver '$($Properties.driverName)'"
                 }
             } else {
-                # Still not available - list what IS available
                 $availableDrivers = Get-PrinterDriver -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name
                 $driverList = if ($availableDrivers) { ($availableDrivers | Select-Object -First 10) -join ", " } else { "none" }
                 return @{
                     Success = $false
-                    Action = "Printer driver '$($Properties.driverName)' not found after installation. Available drivers: $driverList. pnputil output: $pnpOutput"
+                    Action = "Printer driver '$($Properties.driverName)' not found after installation. Available drivers: $driverList"
                 }
             }
         }
