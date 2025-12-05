@@ -11,7 +11,7 @@
 | [Overview](#overview) | Purpose, Architecture, Workflow |
 | [Repository Structure](#repository-structure) | File Organization, Key Directories |
 | [Configuration Files](#configuration-files) | Config.json Schema, Check Structure |
-| [Check Types Reference](#check-types-reference) | All 16 Check Types with Detection/Remediation |
+| [Check Types Reference](#check-types-reference) | All 17 Check Types with Detection/Remediation |
 | [Engine Scripts](#engine-scripts) | Detect.ps1, Remediate.ps1, Execution Flow |
 | [Deployment Pipeline](#deployment-pipeline) | Packaging, Intune Win32 Apps, Proactive Remediation |
 | [Configuration Builder](#configuration-builder) | WebUI Features, Validation |
@@ -80,7 +80,7 @@ ConfigurationBlender/
 ├── Configurations/             # Role configurations (one folder per role)
 │   └── US_CBL/                 # Example: US Computer Based Learning
 │       ├── Config.json         # Configuration definition
-│       └── Assets/             # Supporting files (gitignored)
+│       └── Assets/             # Supporting files
 │           ├── Icons/          # Icon files for shortcuts
 │           ├── Scripts/        # PowerShell scripts to deploy
 │           ├── Drivers/        # Driver packages (INF files)
@@ -178,7 +178,7 @@ Each check in the `checks` array follows this structure:
 
 ## Check Types Reference
 
-Configuration Blender supports 16 check types. Each section below documents the properties, detection logic, and remediation behavior.
+Configuration Blender supports 17 check types. Each section below documents the properties, detection logic, and remediation behavior.
 
 ### Application
 
@@ -727,6 +727,53 @@ Configures network adapter settings. Supports DHCP-to-static conversion.
 
 ---
 
+### EdgeFavorites
+
+Manages Edge browser favorites bar for all user profiles. Enforces exact desired state.
+
+**Properties:**
+```json
+{
+  "sourceAssetPath": "Favorites/US_CBL_Favorites.html"
+}
+```
+
+**Source File Format:** Netscape Bookmark HTML (same format Edge uses for export/import):
+```html
+<!DOCTYPE NETSCAPE-Bookmark-file-1>
+<META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=UTF-8">
+<TITLE>Bookmarks</TITLE>
+<H1>Bookmarks</H1>
+<DL><p>
+    <DT><A HREF="https://example.com">Example Site</A>
+    <DT><A HREF="https://another.com">Another Site</A>
+</DL><p>
+```
+
+**Detection:**
+1. Parse HTML file to extract all `<A HREF="url">name</A>` entries
+2. Sort expected favorites alphabetically by name
+3. For each user profile, read Edge's `Bookmarks` JSON file
+4. Compare `bookmark_bar.children` against expected:
+   - Count mismatch → FAIL
+   - Name mismatch → FAIL
+   - URL mismatch → FAIL
+   - Extra favorites not in source → FAIL
+5. All match → PASS
+
+**Remediation:**
+1. Kill Edge processes (`Stop-Process -Name msedge`)
+2. Parse HTML, sort favorites alphabetically by name
+3. For each user profile + Default profile:
+   - Read or create Edge `Bookmarks` JSON
+   - Replace `bookmark_bar.children` with expected favorites
+   - Write updated JSON
+4. Default profile ensures new users inherit favorites
+
+**Important:** Favorites appear flat on the bar (no folders), sorted alphabetically. Any user-added favorites not in the source file will be removed.
+
+---
+
 ## Engine Scripts
 
 ### Detect.ps1 (ProactiveRemediation)
@@ -839,7 +886,7 @@ Place supporting files in `Assets/` subdirectories:
 - `Assets/Drivers/` - Driver packages
 - `Assets/XML/` - XML configuration files
 
-**Note:** Assets folders are gitignored. Distribute via secure file share or artifact storage.
+**Note:** `Configurations/*` is gitignored (folder structure preserved via `.gitkeep`). Distribute role configs and assets via secure file share or artifact storage.
 
 ### Step 3: Package for Intune
 

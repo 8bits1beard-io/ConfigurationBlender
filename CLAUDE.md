@@ -20,7 +20,7 @@ Config.json (declarative) → Win32 App (deploys to endpoint) → Proactive Reme
 - `Builder/ConfigurationBlender.html` - Single-page WebUI for building configurations
 - `Configurations/[ROLE]/Config.json` - Role-specific configuration definitions
 
-**16 check types:** Application, FilesExist, FolderExists, FolderEmpty, ShortcutExists, ShortcutsAllowList, RegistryValue, DriverInstalled, PrinterInstalled, ServiceRunning, ScheduledTaskExists, WindowsFeature, FirewallRule, CertificateInstalled, AssignedAccess, NetworkAdapterConfiguration
+**17 check types:** Application, FilesExist, FolderExists, FolderEmpty, ShortcutExists, ShortcutsAllowList, RegistryValue, DriverInstalled, PrinterInstalled, ServiceRunning, ScheduledTaskExists, WindowsFeature, FirewallRule, CertificateInstalled, AssignedAccess, NetworkAdapterConfiguration, EdgeFavorites
 
 ## Commands
 
@@ -62,7 +62,7 @@ Each Repair function returns `@{ Success = $bool; Action = $string }`.
 
 **SYSTEM context:** Scripts run as NT AUTHORITY\SYSTEM via Intune. Use `HKLM:\` not `HKCU:\`. Environment variables like `$env:USERPROFILE` resolve to system profile.
 
-**Assets are gitignored:** `Configurations/*/Assets/` folders contain drivers, icons, scripts but are not tracked. Distribute separately.
+**Configurations are gitignored:** `Configurations/*` is gitignored (folder exists via `.gitkeep`, contents not tracked). Role configs and assets are distributed separately.
 
 ## File Locations on Endpoints
 
