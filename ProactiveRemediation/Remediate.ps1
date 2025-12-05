@@ -1482,6 +1482,189 @@ function Repair-NetworkAdapterConfiguration {
     }
 }
 
+function Repair-EdgeFavorites {
+    param($Properties, $CheckName)
+
+    try {
+        # Parse source HTML to get expected favorites
+        $sourceHtmlPath = Join-Path $AssetsPath $Properties.sourceAssetPath
+        if (-not (Test-Path $sourceHtmlPath)) {
+            return @{
+                Success = $false
+                Action = "Source favorites HTML not found: $sourceHtmlPath"
+            }
+        }
+
+        $htmlContent = Get-Content $sourceHtmlPath -Raw
+        $expectedFavorites = @()
+
+        # Parse Netscape Bookmark format - extract <A HREF="url">name</A>
+        $regexMatches = [regex]::Matches($htmlContent, '<A\s+HREF="([^"]+)"[^>]*>([^<]+)</A>', 'IgnoreCase')
+        foreach ($match in $regexMatches) {
+            $expectedFavorites += @{
+                Name = $match.Groups[2].Value.Trim()
+                Url = $match.Groups[1].Value.Trim()
+            }
+        }
+
+        if ($expectedFavorites.Count -eq 0) {
+            return @{
+                Success = $false
+                Action = "No favorites found in source HTML file"
+            }
+        }
+
+        # Sort alphabetically by name
+        $expectedFavorites = $expectedFavorites | Sort-Object { $_.Name }
+
+        # Kill Edge processes to release file locks
+        $edgeProcesses = Get-Process -Name "msedge" -ErrorAction SilentlyContinue
+        if ($edgeProcesses) {
+            Stop-Process -Name "msedge" -Force -ErrorAction SilentlyContinue
+            Start-Sleep -Seconds 2
+        }
+
+        # Get all user profile paths (including Default for new users)
+        $userPaths = @()
+
+        # Add Default profile
+        $defaultPath = "C:\Users\Default\AppData\Local\Microsoft\Edge\User Data\Default"
+        $userPaths += @{ Name = "Default"; Path = $defaultPath }
+
+        # Add existing user profiles
+        $userProfiles = Get-ChildItem "C:\Users" -Directory | Where-Object {
+            $_.Name -notin @('Public', 'Default', 'Default User', 'All Users') -and
+            -not $_.Name.StartsWith('.')
+        }
+
+        foreach ($profile in $userProfiles) {
+            $profilePath = Join-Path $profile.FullName "AppData\Local\Microsoft\Edge\User Data\Default"
+            $userPaths += @{ Name = $profile.Name; Path = $profilePath }
+        }
+
+        $actions = @()
+        $failures = @()
+
+        foreach ($userPath in $userPaths) {
+            $bookmarksPath = Join-Path $userPath.Path "Bookmarks"
+            $edgeProfileDir = $userPath.Path
+
+            try {
+                # Ensure Edge profile directory exists
+                if (-not (Test-Path $edgeProfileDir)) {
+                    New-Item -ItemType Directory -Path $edgeProfileDir -Force | Out-Null
+                }
+
+                # Build new bookmarks structure
+                $timestamp = [math]::Floor((([datetime]::UtcNow - [datetime]::new(1601, 1, 1)).TotalMicroseconds))
+
+                $bookmarkBarChildren = @()
+                foreach ($fav in $expectedFavorites) {
+                    $bookmarkBarChildren += @{
+                        date_added = $timestamp.ToString()
+                        date_last_used = "0"
+                        guid = [guid]::NewGuid().ToString()
+                        id = ($bookmarkBarChildren.Count + 1).ToString()
+                        name = $fav.Name
+                        type = "url"
+                        url = $fav.Url
+                    }
+                }
+
+                # Check if Bookmarks file exists and read existing structure
+                $bookmarksData = $null
+                if (Test-Path $bookmarksPath) {
+                    try {
+                        $existingContent = Get-Content $bookmarksPath -Raw
+                        $bookmarksData = $existingContent | ConvertFrom-Json
+                    } catch {
+                        # Corrupted file, will create new
+                    }
+                }
+
+                # Create new or update existing structure
+                if ($null -eq $bookmarksData) {
+                    $bookmarksData = @{
+                        checksum = ""
+                        roots = @{
+                            bookmark_bar = @{
+                                children = $bookmarkBarChildren
+                                date_added = $timestamp.ToString()
+                                date_last_used = "0"
+                                date_modified = $timestamp.ToString()
+                                guid = [guid]::NewGuid().ToString()
+                                id = "1"
+                                name = "Bookmarks bar"
+                                type = "folder"
+                            }
+                            other = @{
+                                children = @()
+                                date_added = $timestamp.ToString()
+                                date_last_used = "0"
+                                date_modified = "0"
+                                guid = [guid]::NewGuid().ToString()
+                                id = "2"
+                                name = "Other bookmarks"
+                                type = "folder"
+                            }
+                            synced = @{
+                                children = @()
+                                date_added = $timestamp.ToString()
+                                date_last_used = "0"
+                                date_modified = "0"
+                                guid = [guid]::NewGuid().ToString()
+                                id = "3"
+                                name = "Mobile bookmarks"
+                                type = "folder"
+                            }
+                        }
+                        version = 1
+                    }
+                } else {
+                    # Update existing bookmark bar
+                    $bookmarksData.roots.bookmark_bar.children = $bookmarkBarChildren
+                    $bookmarksData.roots.bookmark_bar.date_modified = $timestamp.ToString()
+                }
+
+                # Edge calculates checksum but accepts empty - leave it empty
+                $bookmarksData.checksum = ""
+
+                # Write the file
+                $jsonOutput = $bookmarksData | ConvertTo-Json -Depth 10
+                Set-Content -Path $bookmarksPath -Value $jsonOutput -Encoding UTF8 -Force
+
+                $actions += "Updated favorites for '$($userPath.Name)'"
+
+            } catch {
+                $failures += "Failed to update '$($userPath.Name)': $($_.Exception.Message)"
+            }
+        }
+
+        if ($failures.Count -gt 0 -and $actions.Count -eq 0) {
+            return @{
+                Success = $false
+                Action = $failures -join "; "
+            }
+        }
+
+        $resultAction = $actions -join "; "
+        if ($failures.Count -gt 0) {
+            $resultAction += " (Failures: $($failures -join '; '))"
+        }
+
+        return @{
+            Success = $true
+            Action = $resultAction
+        }
+
+    } catch {
+        return @{
+            Success = $false
+            Action = "Failed to update Edge favorites: $($_.Exception.Message)"
+        }
+    }
+}
+
 # ============================================================================
 # EXECUTE REMEDIATIONS
 # ============================================================================
@@ -1528,6 +1711,7 @@ foreach ($check in $Config.checks) {
             "FirewallRule" { Repair-FirewallRule -Properties $check.properties -CheckName $check.name }
             "CertificateInstalled" { Repair-CertificateInstalled -Properties $check.properties -CheckName $check.name }
             "NetworkAdapterConfiguration" { Repair-NetworkAdapterConfiguration -Properties $check.properties -CheckName $check.name }
+            "EdgeFavorites" { Repair-EdgeFavorites -Properties $check.properties -CheckName $check.name }
             default {
                 @{
                     Success = $false

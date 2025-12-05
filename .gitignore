@@ -12,14 +12,10 @@ Tools/IntuneWinAppUtil.exe
 Output/
 Packages/
 
-# Generated packaging scripts in role folders (created by New-IntunePackage.ps1)
-Configurations/*/Install.ps1
-Configurations/*/Detect.ps1
-
 # ============================================================================
-# Role Assets (drivers, icons, scripts, etc. - not for repo)
+# Role Configurations (folder structure only, contents not tracked)
 # ============================================================================
-Configurations/*/Assets/
+Configurations/*
 
 # ============================================================================
 # Logs (device-specific, not for repo)

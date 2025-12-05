@@ -1205,6 +1205,116 @@ function Test-NetworkAdapterConfiguration {
     }
 }
 
+function Test-EdgeFavorites {
+    param($Properties)
+
+    try {
+        # Parse source HTML to get expected favorites
+        $sourceHtmlPath = Join-Path $AssetsPath $Properties.sourceAssetPath
+        if (-not (Test-Path $sourceHtmlPath)) {
+            return @{
+                Passed = $false
+                Issue = "Source favorites HTML not found: $sourceHtmlPath"
+            }
+        }
+
+        $htmlContent = Get-Content $sourceHtmlPath -Raw
+        $expectedFavorites = @()
+
+        # Parse Netscape Bookmark format - extract <A HREF="url">name</A>
+        $matches = [regex]::Matches($htmlContent, '<A\s+HREF="([^"]+)"[^>]*>([^<]+)</A>', 'IgnoreCase')
+        foreach ($match in $matches) {
+            $expectedFavorites += @{
+                Name = $match.Groups[2].Value.Trim()
+                Url = $match.Groups[1].Value.Trim()
+            }
+        }
+
+        if ($expectedFavorites.Count -eq 0) {
+            return @{
+                Passed = $false
+                Issue = "No favorites found in source HTML file"
+            }
+        }
+
+        # Sort alphabetically by name
+        $expectedFavorites = $expectedFavorites | Sort-Object { $_.Name }
+
+        # Get all user profile paths
+        $userProfiles = Get-ChildItem "C:\Users" -Directory | Where-Object {
+            $_.Name -notin @('Public', 'Default', 'Default User', 'All Users') -and
+            -not $_.Name.StartsWith('.')
+        }
+
+        $issues = @()
+
+        foreach ($profile in $userProfiles) {
+            $bookmarksPath = Join-Path $profile.FullName "AppData\Local\Microsoft\Edge\User Data\Default\Bookmarks"
+
+            if (-not (Test-Path $bookmarksPath)) {
+                # No Edge profile yet - this is OK, remediation will create it
+                continue
+            }
+
+            try {
+                $bookmarksJson = Get-Content $bookmarksPath -Raw | ConvertFrom-Json
+                $bookmarkBar = $bookmarksJson.roots.bookmark_bar.children
+
+                # Get current favorites (only url type, not folders)
+                $currentFavorites = @()
+                if ($bookmarkBar) {
+                    foreach ($item in $bookmarkBar) {
+                        if ($item.type -eq "url") {
+                            $currentFavorites += @{
+                                Name = $item.name
+                                Url = $item.url
+                            }
+                        }
+                    }
+                }
+
+                # Sort current favorites alphabetically for comparison
+                $currentFavorites = $currentFavorites | Sort-Object { $_.Name }
+
+                # Compare count
+                if ($currentFavorites.Count -ne $expectedFavorites.Count) {
+                    $issues += "User '$($profile.Name)': Expected $($expectedFavorites.Count) favorites, found $($currentFavorites.Count)"
+                    continue
+                }
+
+                # Compare each favorite
+                for ($i = 0; $i -lt $expectedFavorites.Count; $i++) {
+                    $expected = $expectedFavorites[$i]
+                    $current = $currentFavorites[$i]
+
+                    if ($current.Name -ne $expected.Name) {
+                        $issues += "User '$($profile.Name)': Favorite name mismatch at position $($i+1) - expected '$($expected.Name)', found '$($current.Name)'"
+                    } elseif ($current.Url -ne $expected.Url) {
+                        $issues += "User '$($profile.Name)': URL mismatch for '$($expected.Name)' - expected '$($expected.Url)', found '$($current.Url)'"
+                    }
+                }
+            } catch {
+                $issues += "User '$($profile.Name)': Failed to read bookmarks - $($_.Exception.Message)"
+            }
+        }
+
+        if ($issues.Count -gt 0) {
+            return @{
+                Passed = $false
+                Issue = $issues -join "; "
+            }
+        }
+
+        return @{ Passed = $true; Issue = $null }
+
+    } catch {
+        return @{
+            Passed = $false
+            Issue = "Error checking Edge favorites: $($_.Exception.Message)"
+        }
+    }
+}
+
 # ============================================================================
 # EXECUTE CHECKS
 # ============================================================================
@@ -1251,6 +1361,7 @@ foreach ($check in $Config.checks) {
             "FirewallRule" { Test-FirewallRule -Properties $check.properties }
             "CertificateInstalled" { Test-CertificateInstalled -Properties $check.properties }
             "NetworkAdapterConfiguration" { Test-NetworkAdapterConfiguration -Properties $check.properties }
+            "EdgeFavorites" { Test-EdgeFavorites -Properties $check.properties }
             default {
                 @{
                     Passed = $false

@@ -539,6 +539,24 @@ function getPropertiesFormForType(type) {
                     </div>
                 </fieldset>
             `;
+        case 'EdgeFavorites':
+            return `
+                <fieldset class="property-group">
+                    <legend>Edge Favorites Properties</legend>
+                    <div class="alert alert-info" role="note">
+                        <strong>How it works:</strong>
+                        <p>Manages Edge's favorites bar for all user profiles. The HTML file should be in Netscape Bookmark format (same as Edge export).</p>
+                        <ul>
+                            <li>Favorites are sorted alphabetically by name on the favorites bar</li>
+                            <li>No folders - all favorites appear directly on the bar</li>
+                            <li>Edge will be closed during remediation to update the Bookmarks file</li>
+                        </ul>
+                    </div>
+                    ${formGroup('prop_sourceAssetPath', 'Favorites HTML File (relative to Assets)',
+                        `<input type="text" id="prop_sourceAssetPath" placeholder="Favorites/US_CBL_Favorites.html" translate="no">`,
+                        'Netscape Bookmark format HTML file exported from Edge or created manually', true, true)}
+                </fieldset>
+            `;
         case 'NetworkAdapterConfiguration':
             return `
                 <fieldset class="property-group">
@@ -815,6 +833,9 @@ function getCheckProperties() {
             if (certSourcePath) properties.sourceAssetPath = certSourcePath;
             const pfxPass = document.getElementById('prop_pfxPassword').value;
             if (pfxPass) properties.pfxPassword = pfxPass;
+            break;
+        case 'EdgeFavorites':
+            properties.sourceAssetPath = document.getElementById('prop_sourceAssetPath').value;
             break;
         case 'NetworkAdapterConfiguration':
             // Identification mode determines which fields to use
