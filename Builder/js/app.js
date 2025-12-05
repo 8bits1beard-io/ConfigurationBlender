@@ -319,7 +319,6 @@ function escapeHtml(text) {
 function getCheckTypeCategory(type) {
     const categoryMap = {
         'Application': 'cat-applications',
-        'FolderEmpty': 'cat-files',
         'FolderExists': 'cat-files',
         'FilesExist': 'cat-files',
         'ShortcutProperties': 'cat-shortcuts',
@@ -385,7 +384,6 @@ function findDuplicateCheck(type, properties, name) {
             case 'ShortcutsAllowList':
                 return c.properties.path?.toLowerCase() === properties.path?.toLowerCase();
 
-            case 'FolderEmpty':
             case 'FolderExists':
                 return c.properties.path?.toLowerCase() === properties.path?.toLowerCase();
 
@@ -892,43 +890,20 @@ function closeSettings() {
 const exampleConfigurations = [
     {
         name: 'Kiosk Setup',
-        description: 'Basic kiosk configuration with Edge shortcuts, desktop cleanup, and Assigned Access',
+        description: 'Basic kiosk configuration with Edge shortcuts and Assigned Access',
         icon: '&#128421;', // Desktop monitor
         config: {
             role: 'Kiosk',
-            description: 'Kiosk configuration with limited apps and clean desktop',
+            description: 'Kiosk configuration with limited apps',
             checks: [
                 {
-                    id: '1', name: 'Clear Desktop', type: 'FolderEmpty', enabled: true,
-                    properties: { paths: ['$env:PUBLIC\\Desktop'], includeAllUserProfiles: true }
-                },
-                {
-                    id: '2', name: 'Kiosk Shortcut', type: 'ShortcutExists', enabled: true,
+                    id: '1', name: 'Kiosk Shortcut', type: 'ShortcutProperties', enabled: true,
                     properties: {
                         path: 'C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\Kiosk App.lnk',
                         targetPath: 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
                         arguments: '--no-first-run --kiosk https://example.com --edge-kiosk-type=public-browsing',
                         description: 'Kiosk Application'
                     }
-                }
-            ]
-        }
-    },
-    {
-        name: 'Desktop Cleanup',
-        description: 'Remove unwanted shortcuts and clean up desktop folders',
-        icon: '&#128465;', // Wastebasket
-        config: {
-            role: 'Cleanup',
-            description: 'Desktop and Start Menu cleanup configuration',
-            checks: [
-                {
-                    id: '1', name: 'Clear Public Desktop', type: 'FolderEmpty', enabled: true,
-                    properties: { paths: ['$env:PUBLIC\\Desktop'], includeAllUserProfiles: false }
-                },
-                {
-                    id: '2', name: 'Clear User Desktops', type: 'FolderEmpty', enabled: true,
-                    properties: { paths: ['$env:USERPROFILE\\Desktop'], includeAllUserProfiles: true }
                 }
             ]
         }
@@ -1104,6 +1079,11 @@ function loadExample(index) {
     document.getElementById('configDescription').value = example.config.description || '';
     document.getElementById('configVersion').value = '1.0.0';
     document.getElementById('configDate').value = new Date().toISOString().split('T')[0];
+
+    // Clear imported version since this is a new config from example
+    if (typeof clearImportedVersion === 'function') {
+        clearImportedVersion();
+    }
 
     checks = JSON.parse(JSON.stringify(example.config.checks));
     renderChecksList();

@@ -272,34 +272,7 @@ Ensures a folder exists with optional minimum file count.
 
 ---
 
-### FolderEmpty
-
-Ensures specified folders are empty. Used for clearing desktops.
-
-**Properties:**
-```json
-{
-  "paths": [
-    "$env:PUBLIC\\Desktop",
-    "$env:USERPROFILE\\Desktop"
-  ],
-  "includeAllUserProfiles": true
-}
-```
-
-**Detection:**
-1. Expand environment variables in paths
-2. If `includeAllUserProfiles`, add all user Desktop folders
-3. Count items in all paths
-4. FAIL if total items > 0
-
-**Remediation:**
-1. Delete all items from specified folders
-2. Continue on individual file deletion failures
-
----
-
-### ShortcutExists
+### ShortcutProperties
 
 Creates or validates Windows shortcuts (.lnk files).
 

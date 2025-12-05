@@ -101,41 +101,6 @@ function Test-Application {
     return @{ Passed = $true; Issue = $null }
 }
 
-function Test-FolderEmpty {
-    param($Properties)
-
-    $totalItems = 0
-    $paths = @()
-
-    foreach ($path in $Properties.paths) {
-        $expandedPath = $ExecutionContext.InvokeCommand.ExpandString($path)
-        $paths += $expandedPath
-    }
-
-    if ($Properties.includeAllUserProfiles) {
-        $users = Get-CimInstance -ClassName Win32_UserProfile | Where-Object { $_.Special -eq $false }
-        foreach ($user in $users) {
-            $paths += Join-Path -Path $user.LocalPath -ChildPath "Desktop"
-        }
-    }
-
-    foreach ($path in $paths) {
-        if (Test-Path $path) {
-            $items = Get-ChildItem -Path $path -ErrorAction SilentlyContinue
-            $totalItems += $items.Count
-        }
-    }
-
-    if ($totalItems -gt 0) {
-        return @{
-            Passed = $false
-            Issue = "Desktop folders contain $totalItems item(s)"
-        }
-    }
-
-    return @{ Passed = $true; Issue = $null }
-}
-
 function Test-ShortcutsAllowList {
     param($Properties)
 
@@ -1375,7 +1340,6 @@ foreach ($check in $Config.checks) {
     try {
         $testResult = switch ($check.type) {
             "Application" { Test-Application -Properties $check.properties }
-            "FolderEmpty" { Test-FolderEmpty -Properties $check.properties }
             "ShortcutsAllowList" { Test-ShortcutsAllowList -Properties $check.properties }
             "FolderExists" { Test-FolderExists -Properties $check.properties }
             # FolderHasFiles renamed to FolderExists - backward compatibility

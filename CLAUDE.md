@@ -20,7 +20,7 @@ Config.json (declarative) → Win32 App (deploys to endpoint) → Proactive Reme
 - `Builder/ConfigurationBlender.html` - Single-page WebUI for building configurations
 - `Configurations/[ROLE]/Config.json` - Role-specific configuration definitions
 
-**17 check types:** Application, FilesExist, FolderExists, FolderEmpty, ShortcutExists, ShortcutsAllowList, RegistryValue, DriverInstalled, PrinterInstalled, ServiceRunning, ScheduledTaskExists, WindowsFeature, FirewallRule, CertificateInstalled, AssignedAccess, NetworkAdapterConfiguration, EdgeFavorites
+**16 check types:** Application, FilesExist, FolderExists, ShortcutProperties, ShortcutsAllowList, RegistryValue, DriverInstalled, PrinterInstalled, ServiceRunning, ScheduledTaskExists, WindowsFeature, FirewallRule, CertificateInstalled, AssignedAccess, NetworkAdapterConfiguration, EdgeFavorites
 
 ## Commands
 

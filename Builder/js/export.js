@@ -4,22 +4,50 @@
    ============================================================================ */
 
 // ============================================================================
+// Version Tracking
+// ============================================================================
+
+// Tracks the version when config was imported (null for new configs)
+let importedVersion = null;
+
+function getImportedVersion() {
+    return importedVersion;
+}
+
+function setImportedVersion(version) {
+    importedVersion = version;
+}
+
+function clearImportedVersion() {
+    importedVersion = null;
+}
+
+// Compare versions - returns true if newVersion > oldVersion
+function isVersionIncremented(oldVersion, newVersion) {
+    if (!oldVersion || !newVersion) return true;
+
+    const oldParts = oldVersion.split('.').map(p => parseInt(p) || 0);
+    const newParts = newVersion.split('.').map(p => parseInt(p) || 0);
+
+    // Pad arrays to same length
+    while (oldParts.length < 3) oldParts.push(0);
+    while (newParts.length < 3) newParts.push(0);
+
+    // Compare each part
+    for (let i = 0; i < 3; i++) {
+        if (newParts[i] > oldParts[i]) return true;
+        if (newParts[i] < oldParts[i]) return false;
+    }
+    return false; // versions are equal
+}
+
+// ============================================================================
 // Version and Date Helpers
 // ============================================================================
 
 function getTodayDate() {
     const today = new Date();
     return today.toISOString().split('T')[0]; // YYYY-MM-DD format
-}
-
-function incrementVersion(version) {
-    if (!version) return '1.0.1';
-    const parts = version.split('.');
-    if (parts.length === 3) {
-        parts[2] = String(parseInt(parts[2] || 0) + 1);
-        return parts.join('.');
-    }
-    return version + '.1';
 }
 
 // ============================================================================
@@ -38,19 +66,22 @@ function handleFileImport(event) {
     reader.onload = (e) => {
         try {
             const config = JSON.parse(e.target.result);
-            // Auto-increment version and set today's date
-            const newVersion = incrementVersion(config.version || '1.0.0');
-            document.getElementById('configVersion').value = newVersion;
+            // Store the original version for comparison on export
+            const originalVersion = config.version || '1.0.0';
+            setImportedVersion(originalVersion);
+
+            // Load config as-is (no auto-increment)
+            document.getElementById('configVersion').value = originalVersion;
             document.getElementById('configRole').value = config.role || '';
             document.getElementById('configDescription').value = config.description || '';
             document.getElementById('configAuthor').value = config.author || '';
-            document.getElementById('configDate').value = getTodayDate();
+            document.getElementById('configDate').value = config.lastModified || getTodayDate();
             checks = config.checks || [];
             renderChecksList();
-            markUnsaved();
+            markSaved(); // Just imported, nothing has changed yet
 
             // Show success message
-            const message = `Configuration imported. Version bumped to ${newVersion}`;
+            const message = `Configuration imported (v${originalVersion}). Increment version before exporting changes.`;
             showStatus(message, 'success');
 
             // Announce to screen readers
@@ -81,6 +112,9 @@ function handleFileImport(event) {
 // ============================================================================
 
 function doExportConfig() {
+    // Update date to today before export
+    document.getElementById('configDate').value = getTodayDate();
+
     const config = getConfig();
     const blob = new Blob([JSON.stringify(config, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -91,6 +125,9 @@ function doExportConfig() {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+
+    // Update imported version to current version (since we just exported)
+    setImportedVersion(config.version);
 
     // Mark as saved
     markSaved();
@@ -134,6 +171,32 @@ function exportConfig() {
         return;
     }
 
+    // Check if version needs to be incremented
+    const originalVersion = getImportedVersion();
+    const currentVersion = document.getElementById('configVersion').value;
+
+    // If this was an imported config and there are unsaved changes, require version increment
+    // hasUnsavedChanges is a global variable from app.js
+    if (originalVersion && hasUnsavedChanges) {
+        if (!isVersionIncremented(originalVersion, currentVersion)) {
+            const message = `Version must be incremented before export. Current: ${currentVersion}, Original: ${originalVersion}`;
+            showStatus(message, 'error');
+
+            if (typeof playErrorSound === 'function') {
+                playErrorSound();
+            }
+
+            if (typeof announceError === 'function') {
+                announceError(message);
+            }
+
+            // Focus the version field
+            document.getElementById('configVersion').focus();
+            document.getElementById('configVersion').select();
+            return;
+        }
+    }
+
     const { errors } = validateConfiguration();
     if (errors.length > 0) {
         showValidationResults();
@@ -150,7 +213,6 @@ function exportConfig() {
 
 const checkTypeIcons = {
     'Application': '📦',
-    'FolderEmpty': '📁',
     'FolderExists': '📁',
     'FilesExist': '📄',
     'ShortcutsAllowList': '🔗',
@@ -208,28 +270,6 @@ function generateApplicationSummary(props) {
             md += `\nArguments: \`${props.uninstallArguments}\`\n`;
         }
     }
-    return md;
-}
-
-function generateFolderEmptySummary(props) {
-    let md = '```mermaid\nflowchart LR\n';
-    md += '    A[Check Folders] --> B{Empty?}\n';
-    md += '    B -->|Yes| C[✅ Pass]\n';
-    md += '    B -->|No| D[Delete Contents]\n';
-    md += '    D --> E[✅ Cleared]\n';
-    md += '```\n\n';
-
-    md += '**Detection:**\n';
-    md += 'Checks if these folders are empty:\n';
-    (props.paths || []).forEach(p => {
-        md += `- \`${p}\`\n`;
-    });
-    if (props.includeAllUserProfiles) {
-        md += '\n*Also checks all user profile folders*\n';
-    }
-
-    md += '\n**Remediation:**\n';
-    md += 'Deletes all files and subfolders from the listed paths.\n';
     return md;
 }
 
@@ -670,9 +710,6 @@ function generateCheckSummary(check, index) {
     switch (check.type) {
         case 'Application':
             md += generateApplicationSummary(props);
-            break;
-        case 'FolderEmpty':
-            md += generateFolderEmptySummary(props);
             break;
         case 'FolderExists':
             md += generateFolderExistsSummary(props);

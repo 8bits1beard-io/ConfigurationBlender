@@ -125,44 +125,6 @@ function Repair-Application {
     }
 }
 
-function Repair-FolderEmpty {
-    param($Properties, $CheckName)
-
-    $removedCount = 0
-    $paths = @()
-
-    foreach ($path in $Properties.paths) {
-        $expandedPath = $ExecutionContext.InvokeCommand.ExpandString($path)
-        $paths += $expandedPath
-    }
-
-    if ($Properties.includeAllUserProfiles) {
-        $users = Get-CimInstance -ClassName Win32_UserProfile | Where-Object { $_.Special -eq $false }
-        foreach ($user in $users) {
-            $paths += Join-Path -Path $user.LocalPath -ChildPath "Desktop"
-        }
-    }
-
-    foreach ($path in $paths) {
-        if (Test-Path $path) {
-            $items = Get-ChildItem -Path $path -ErrorAction SilentlyContinue
-            foreach ($item in $items) {
-                try {
-                    Remove-Item -Path $item.FullName -Force -Recurse -ErrorAction Stop
-                    $removedCount++
-                } catch {
-                    # Continue on individual failures
-                }
-            }
-        }
-    }
-
-    return @{
-        Success = $true
-        Action = "Removed $removedCount item(s) from desktop folders"
-    }
-}
-
 function Repair-ShortcutsAllowList {
     param($Properties, $CheckName)
 
@@ -203,6 +165,7 @@ function Repair-ShortcutsAllowList {
 
     $removedCount = 0
     $removedDetails = @()
+    $failedItems = @()
 
     foreach ($checkPath in $pathsToCheck) {
         if (-not (Test-Path $checkPath)) {
@@ -218,21 +181,29 @@ function Repair-ShortcutsAllowList {
                 $removedCount++
                 $removedDetails += "$($shortcut.Name)"
             } catch {
-                # Continue on individual failures
+                $failedItems += "$($shortcut.Name): $($_.Exception.Message)"
             }
         }
     }
 
-    if ($removedCount -eq 0) {
+    if ($removedCount -eq 0 -and $failedItems.Count -eq 0) {
         return @{
             Success = $true
             Action = "No unwanted shortcuts found"
         }
     }
 
+    $actionMsg = "Removed $removedCount unwanted shortcut(s)"
+    if ($removedDetails.Count -gt 0) {
+        $actionMsg += ": $($removedDetails -join ', ')"
+    }
+    if ($failedItems.Count -gt 0) {
+        $actionMsg += "; PARTIAL FAILURE - could not remove: $($failedItems -join '; ')"
+    }
+
     return @{
-        Success = $true
-        Action = "Removed $removedCount unwanted shortcut(s): $($removedDetails -join ', ')"
+        Success = ($failedItems.Count -eq 0 -or $removedCount -gt 0)
+        Action = $actionMsg
     }
 }
 
@@ -264,19 +235,25 @@ function Repair-FolderExists {
     }
 
     $copiedCount = 0
+    $failedItems = @()
     $files = Get-ChildItem -Path $sourcePath -File -ErrorAction SilentlyContinue
     foreach ($file in $files) {
         try {
             Copy-Item -Path $file.FullName -Destination $Properties.path -Force -ErrorAction Stop
             $copiedCount++
         } catch {
-            # Continue on individual failures
+            $failedItems += "$($file.Name): $($_.Exception.Message)"
         }
     }
 
+    $actionMsg = "Copied $copiedCount file(s) to $($Properties.path)"
+    if ($failedItems.Count -gt 0) {
+        $actionMsg += "; PARTIAL FAILURE - could not copy: $($failedItems -join '; ')"
+    }
+
     return @{
-        Success = $true
-        Action = "Copied $copiedCount file(s) to $($Properties.path)"
+        Success = ($failedItems.Count -eq 0 -or $copiedCount -gt 0)
+        Action = $actionMsg
     }
 }
 
@@ -331,6 +308,8 @@ function Repair-FilesExist {
     }
 
     $copiedCount = 0
+    $failedItems = @()
+    $missingSource = @()
     foreach ($file in $Properties.files) {
         $destFile = Join-Path $Properties.destinationPath $file
         if (-not (Test-Path $destFile)) {
@@ -340,15 +319,25 @@ function Repair-FilesExist {
                     Copy-Item -Path $sourceFile -Destination $destFile -Force -ErrorAction Stop
                     $copiedCount++
                 } catch {
-                    # Continue on individual failures
+                    $failedItems += "$file`: $($_.Exception.Message)"
                 }
+            } else {
+                $missingSource += $file
             }
         }
     }
 
+    $actionMsg = "Copied $copiedCount missing file(s)"
+    if ($missingSource.Count -gt 0) {
+        $actionMsg += "; WARNING - source files not found: $($missingSource -join ', ')"
+    }
+    if ($failedItems.Count -gt 0) {
+        $actionMsg += "; PARTIAL FAILURE - could not copy: $($failedItems -join '; ')"
+    }
+
     return @{
-        Success = $true
-        Action = "Copied $copiedCount missing file(s)"
+        Success = ($failedItems.Count -eq 0 -and $missingSource.Count -eq 0) -or $copiedCount -gt 0
+        Action = $actionMsg
     }
 }
 
@@ -590,6 +579,9 @@ function Repair-ServiceRunning {
 function Repair-PrinterInstalled {
     param($Properties, $CheckName)
 
+    # Track non-fatal warnings to include in action message
+    $warnings = @()
+
     try {
         # Validate required fields for network printers
         if (-not $Properties.printerName -or -not $Properties.driverName -or -not $Properties.printerIP -or -not $Properties.portName) {
@@ -682,8 +674,8 @@ function Repair-PrinterInstalled {
                     }
                 }
             } catch {
-                # Continue even if spooler stop fails
-                Write-Warning "Could not stop spooler cleanly: $($_.Exception.Message)"
+                # Continue even if spooler stop fails - log warning
+                $warnings += "Could not stop spooler cleanly: $($_.Exception.Message)"
             }
 
             # Clear print jobs from spool directory (while spooler is stopped)
@@ -694,8 +686,8 @@ function Repair-PrinterInstalled {
                     Get-ChildItem -Path $spoolPath -Filter "*.spl" -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
                 }
             } catch {
-                # Continue even if clearing spool fails
-                Write-Warning "Could not clear spool files: $($_.Exception.Message)"
+                # Continue even if clearing spool fails - log warning
+                $warnings += "Could not clear spool files: $($_.Exception.Message)"
             }
 
             # Restart spooler - it must be running to remove/add printers
@@ -750,8 +742,8 @@ function Repair-PrinterInstalled {
                         Remove-PrinterPort -Name $Properties.portName -ErrorAction Stop
                     }
                 } catch {
-                    # Continue even if port removal fails
-                    Write-Warning "Could not remove port: $($_.Exception.Message)"
+                    # Continue even if port removal fails - log warning
+                    $warnings += "Could not remove port: $($_.Exception.Message)"
                 }
             }
 
@@ -807,34 +799,50 @@ function Repair-PrinterInstalled {
             }
 
             # Determine action message
-            if ($needsRecreation) {
-                return @{
-                    Success = $true
-                    Action = "Recreated printer due to: $($recreationReasons -join ', ')"
-                }
+            $actionMsg = if ($needsRecreation) {
+                "Recreated printer due to: $($recreationReasons -join ', ')"
             } else {
-                return @{
-                    Success = $true
-                    Action = "Installed network printer '$($Properties.printerName)' on port $($Properties.portName) with driver '$($Properties.driverName)'"
-                }
+                "Installed network printer '$($Properties.printerName)' on port $($Properties.portName) with driver '$($Properties.driverName)'"
             }
+
+            if ($warnings.Count -gt 0) {
+                $actionMsg += "; WARNINGS: $($warnings -join '; ')"
+            }
+
+            return @{
+                Success = $true
+                Action = $actionMsg
+            }
+        }
+
+        $actionMsg = "Printer already configured correctly"
+        if ($warnings.Count -gt 0) {
+            $actionMsg += "; WARNINGS: $($warnings -join '; ')"
         }
 
         return @{
             Success = $true
-            Action = "Printer already configured correctly"
+            Action = $actionMsg
         }
 
     } catch {
+        $actionMsg = "Failed to configure printer: $($_.Exception.Message)"
+        if ($warnings.Count -gt 0) {
+            $actionMsg += "; Prior warnings: $($warnings -join '; ')"
+        }
+
         return @{
             Success = $false
-            Action = "Failed to configure printer: $($_.Exception.Message)"
+            Action = $actionMsg
         }
     }
 }
 
 function Repair-DriverInstalled {
     param($Properties, $CheckName)
+
+    # Track non-fatal warnings to include in action message
+    $warnings = @()
 
     try {
         # Resolve source asset path
@@ -916,7 +924,7 @@ function Repair-DriverInstalled {
                         & pnputil /delete-driver $driverInfName /uninstall /force 2>&1 | Out-Null
                     }
                 } catch {
-                    Write-Warning "Could not cleanly remove old driver: $($_.Exception.Message)"
+                    $warnings += "Could not cleanly remove old driver: $($_.Exception.Message)"
                 }
             }
         }
@@ -948,9 +956,13 @@ function Repair-DriverInstalled {
             $printerDriver = Get-PrinterDriver -Name $Properties.driverName -ErrorAction SilentlyContinue
 
             if ($printerDriver) {
+                $actionMsg = "Installed printer driver '$($Properties.driverName)'"
+                if ($warnings.Count -gt 0) {
+                    $actionMsg += "; WARNINGS: $($warnings -join '; ')"
+                }
                 return @{
                     Success = $true
-                    Action = "Installed printer driver '$($Properties.driverName)'"
+                    Action = $actionMsg
                 }
             } else {
                 $availableDrivers = Get-PrinterDriver -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name
@@ -985,22 +997,34 @@ function Repair-DriverInstalled {
                 }
             }
 
+            $actionMsg = "Installed driver '$($Properties.driverName)' version $($installedDriver.Version)"
+            if ($warnings.Count -gt 0) {
+                $actionMsg += "; WARNINGS: $($warnings -join '; ')"
+            }
             return @{
                 Success = $true
-                Action = "Installed driver '$($Properties.driverName)' version $($installedDriver.Version)"
+                Action = $actionMsg
             }
         } else {
             # Driver not found after pnputil - actual failure
+            $actionMsg = "Driver not found after installation attempt. pnputil output: $pnpOutput"
+            if ($warnings.Count -gt 0) {
+                $actionMsg += "; Prior warnings: $($warnings -join '; ')"
+            }
             return @{
                 Success = $false
-                Action = "Driver not found after installation attempt. pnputil output: $pnpOutput"
+                Action = $actionMsg
             }
         }
 
     } catch {
+        $actionMsg = "Failed to install driver: $($_.Exception.Message)"
+        if ($warnings.Count -gt 0) {
+            $actionMsg += "; Prior warnings: $($warnings -join '; ')"
+        }
         return @{
             Success = $false
-            Action = "Failed to install driver: $($_.Exception.Message)"
+            Action = $actionMsg
         }
     }
 }
@@ -1729,7 +1753,6 @@ foreach ($check in $Config.checks) {
     try {
         $repairResult = switch ($check.type) {
             "Application" { Repair-Application -Properties $check.properties -CheckName $check.name }
-            "FolderEmpty" { Repair-FolderEmpty -Properties $check.properties -CheckName $check.name }
             "ShortcutsAllowList" { Repair-ShortcutsAllowList -Properties $check.properties -CheckName $check.name }
             "FolderExists" { Repair-FolderExists -Properties $check.properties -CheckName $check.name }
             # FolderHasFiles renamed to FolderExists - backward compatibility

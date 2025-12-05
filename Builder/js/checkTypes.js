@@ -197,16 +197,6 @@ function getPropertiesFormForType(type) {
                     </div>
                 </fieldset>
             `;
-        case 'FolderEmpty':
-            return `
-                <fieldset class="property-group">
-                    <legend>Folder Properties</legend>
-                    ${formGroup('prop_paths', 'Paths to Clear (one per line)',
-                        `<textarea id="prop_paths" rows="3" placeholder="$env:PUBLIC\\Desktop" translate="no"></textarea>`,
-                        '', true, true)}
-                    ${checkboxGroup('prop_includeAllUserProfiles', 'Include All User Profiles')}
-                </fieldset>
-            `;
         case 'ShortcutsAllowList':
             return `
                 <fieldset class="property-group">
@@ -727,10 +717,6 @@ function getCheckProperties() {
                 properties.uninstallPaths = document.getElementById('prop_uninstallPaths').value.split('\n').filter(p => p.trim());
                 properties.uninstallArguments = document.getElementById('prop_uninstallArguments').value;
             }
-            break;
-        case 'FolderEmpty':
-            properties.paths = document.getElementById('prop_paths').value.split('\n').filter(p => p.trim());
-            properties.includeAllUserProfiles = document.getElementById('prop_includeAllUserProfiles').checked;
             break;
         case 'ShortcutsAllowList':
             properties.paths = document.getElementById('prop_paths').value.split('\n').filter(p => p.trim());
