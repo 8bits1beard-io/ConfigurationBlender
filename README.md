@@ -19,16 +19,38 @@ Configuration Blender adds a detection and self-healing layer that runs alongsid
 
 **How it works:**
 
-1. Role team runs `git pull` to get the latest version of the tool
-2. Role team runs `.\Tools\New-ConfigurationRole.ps1` to create folder structure and open the web-based editor
-3. Role team adds checks, exports Config.json and Summary, places both in the role folder
-4. Role team runs `.\Tools\New-IntunePackage.ps1` to create a deployable Intune app
-5. Upload app to Intune using supplied install settings *
-6. Assign a group to the app (or to uninstall if removing a role) *
-7. Intune pushes the configuration file and assets to the workstation *
-8. Proactive Remediation reads the configuration and enforces it on schedule
+```mermaid
+flowchart LR
+    subgraph Author["1. Author"]
+        A1[Run New-ConfigurationRole.ps1] --> A2[Build config in WebUI]
+        A2 --> A3[Export Config.json]
+    end
 
-*Steps 5-7 are manual during initial rollout. This tool is designed for full CI/CD automation. Future state: role team commits changes, Azure workflows handle packaging and deployment automatically. This reduces mean time to remediation, eliminates manual handoffs, and ensures devices return to desired state faster.
+    subgraph Package["2. Package"]
+        P1[Run New-IntunePackage.ps1] --> P2[.intunewin created]
+    end
+
+    subgraph Deploy["3. Deploy"]
+        D1[Upload to Intune] --> D2[Assign to devices]
+        D2 --> D3[Win32 app installs config]
+    end
+
+    subgraph Enforce["4. Enforce"]
+        E1[Proactive Remediation runs] --> E2{Drift detected?}
+        E2 -->|No| E3[Exit compliant]
+        E2 -->|Yes| E4[Auto-remediate]
+        E4 --> E5[Log actions]
+    end
+
+    Author --> Package --> Deploy --> Enforce
+```
+
+1. **Author** - Role team creates configuration using the web-based builder
+2. **Package** - PowerShell script generates Intune-ready `.intunewin` file
+3. **Deploy** - Upload to Intune and assign to device groups
+4. **Enforce** - Proactive Remediation detects drift and auto-corrects
+
+*Steps in Deploy are manual during initial rollout. This tool is designed for full CI/CD automation. Future state: role team commits changes, Azure workflows handle packaging and deployment automatically. This reduces mean time to remediation, eliminates manual handoffs, and ensures devices return to desired state faster.*
 
 ---
 

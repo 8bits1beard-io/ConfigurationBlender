@@ -11,7 +11,7 @@
 | [Overview](#overview) | Purpose, Architecture, Workflow |
 | [Repository Structure](#repository-structure) | File Organization, Key Directories |
 | [Configuration Files](#configuration-files) | Config.json Schema, Check Structure |
-| [Check Types Reference](#check-types-reference) | All 17 Check Types with Detection/Remediation |
+| [Check Types Reference](#check-types-reference) | All 16 Check Types with Detection/Remediation |
 | [Engine Scripts](#engine-scripts) | Detect.ps1, Remediate.ps1, Execution Flow |
 | [Deployment Pipeline](#deployment-pipeline) | Packaging, Intune Win32 Apps, Proactive Remediation |
 | [Configuration Builder](#configuration-builder) | WebUI Features, Validation |
@@ -178,7 +178,7 @@ Each check in the `checks` array follows this structure:
 
 ## Check Types Reference
 
-Configuration Blender supports 17 check types. Each section below documents the properties, detection logic, and remediation behavior.
+Configuration Blender supports 16 check types. Each section below documents the properties, detection logic, and remediation behavior.
 
 ### Application
 
