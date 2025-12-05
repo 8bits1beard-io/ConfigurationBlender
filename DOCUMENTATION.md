@@ -1,6 +1,6 @@
 # Configuration Blender - Technical Documentation
 
-> Comprehensive technical guide for engineers implementing and extending Configuration Blender.
+> Comprehensive technical documentation for engineers implementing and extending Configuration Blender.
 
 ---
 
@@ -8,738 +8,106 @@
 
 | Section | Topics |
 |---------|--------|
-| [Architecture Overview](#architecture-overview) | Pipeline, Components, Data Flow |
-| [Installation & Setup](#installation--setup) | Prerequisites, Repository, External Tools |
-| [Configuration Builder](#configuration-builder-webui) | Features, Check Types, Validation |
-| [Config.json Schema](#configjson-schema) | Metadata, Check Structure, Properties |
-| [Deployment Pipeline](#deployment-pipeline) | Create Role, Package, Deploy, Update |
-| [Engine Scripts](#engine-scripts) | Detection, Remediation, Execution Context |
-| [File Paths & Registry](#file-paths--registry) | Paths, Registry Keys, Logging |
+| [Overview](#overview) | Purpose, Architecture, Workflow |
+| [Repository Structure](#repository-structure) | File Organization, Key Directories |
+| [Configuration Files](#configuration-files) | Config.json Schema, Check Structure |
+| [Check Types Reference](#check-types-reference) | All 16 Check Types with Detection/Remediation |
+| [Engine Scripts](#engine-scripts) | Detect.ps1, Remediate.ps1, Execution Flow |
+| [Deployment Pipeline](#deployment-pipeline) | Packaging, Intune Win32 Apps, Proactive Remediation |
+| [Configuration Builder](#configuration-builder) | WebUI Features, Validation |
+| [Tools Reference](#tools-reference) | New-IntunePackage.ps1, New-ConfigurationRole.ps1 |
 | [Testing](#testing) | Local Testing, SYSTEM Context |
 | [Extending](#extending-configuration-blender) | Adding New Check Types |
 | [Troubleshooting](#troubleshooting) | Common Issues, Log Analysis |
 
 ---
 
-## Architecture Overview
+## Overview
 
-### Three-Stage Pipeline
+### Purpose
 
-Configuration Blender uses a three-stage pipeline to separate concerns between configuration definition, deployment, and enforcement.
+Configuration Blender is a configuration-as-code framework for managing Windows endpoint configurations at scale. It enables:
 
-```mermaid
-flowchart LR
-    subgraph Stage1["1. CREATE"]
-        A[Role Team] --> B[WebUI Builder]
-        B --> C[Config.json + Assets]
-    end
+- **Declarative Configuration**: Define desired system state in JSON
+- **Automatic Drift Detection**: Scheduled checks identify non-compliant systems
+- **Self-Healing**: Automatic remediation restores compliant state
+- **Role-Based Management**: Different configurations per device role (kiosk, workstation, etc.)
 
-    subgraph Stage2["2. DEPLOY"]
-        C --> D[New-IntunePackage.ps1]
-        D --> E[.intunewin Package]
-        E --> F[Intune Win32 App]
-        F --> G[Endpoints]
-    end
+### Architecture
 
-    subgraph Stage3["3. ENFORCE"]
-        H[Proactive Remediation] --> I{Compliant?}
-        I -->|Yes| J[Exit 0]
-        I -->|No| K[Remediate.ps1]
-        K --> L[Self-Heal]
-    end
-
-    G --> H
+```
+Repository                           Endpoint
++---------------------------+        +---------------------------+
+| Configurations/ROLE/      |        | C:\ProgramData\           |
+|   Config.json             |  --->  |   ConfigurationBlender\   |
+|   Assets/                 |        |     Config.json           |
++---------------------------+        |     Assets\               |
+                                     |     Logs\                 |
+Tools/New-IntunePackage.ps1          +---------------------------+
+           |                                    |
+           v                                    v
++---------------------------+        +---------------------------+
+| Output/                   |        | Intune Proactive          |
+|   ROLE_vX.Y.Z.intunewin   |  --->  |   Remediation             |
++---------------------------+        |     Detect.ps1            |
+                                     |     Remediate.ps1         |
+                                     +---------------------------+
 ```
 
-### Component Diagram
+### High-Level Workflow
 
-```mermaid
-graph TB
-    subgraph Repository
-        Builder[Builder/ConfigurationBlender.html]
-        Engine[Engine/Detect.ps1 & Remediate.ps1]
-        Packaging[Packaging/Install.ps1 & Detect.ps1]
-        Tools[Tools/New-IntunePackage.ps1]
-        Configs[Configurations/ROLE/Config.json]
-    end
-
-    subgraph Intune
-        Win32[Win32 App per Role]
-        PR[Proactive Remediation Policy]
-    end
-
-    subgraph Endpoint
-        ConfigFile[C:\ProgramData\ConfigurationBlender\Config.json]
-        Assets[C:\ProgramData\ConfigurationBlender\Assets\]
-        Logs[C:\ProgramData\ConfigurationBlender\Logs\]
-    end
-
-    Builder -->|Export| Configs
-    Configs --> Tools
-    Tools -->|Package| Win32
-    Engine --> PR
-    Win32 -->|Deploy| ConfigFile
-    Win32 -->|Deploy| Assets
-    PR -->|Read| ConfigFile
-    PR -->|Write| Logs
-```
-
-### Data Flow
-
-```mermaid
-sequenceDiagram
-    participant RT as Role Team
-    participant WE as Windows Engineering
-    participant Intune
-    participant Device
-
-    RT->>RT: Create/Edit Config.json in Builder
-    RT->>RT: Export and commit to repo
-    RT->>WE: Submit change request
-    WE->>WE: Run New-IntunePackage.ps1
-    WE->>Intune: Upload .intunewin
-    Intune->>Device: Deploy Win32 App
-    Device->>Device: Install.ps1 copies Config.json
-
-    loop Scheduled
-        Device->>Device: Detect.ps1 runs
-        alt Non-Compliant
-            Device->>Device: Remediate.ps1 fixes drift
-            Device->>Device: Log remediation actions
-        end
-    end
-```
+1. **Create**: Build configuration using WebUI Builder or edit Config.json directly
+2. **Package**: Run `New-IntunePackage.ps1` to create `.intunewin` file
+3. **Deploy**: Upload Win32 app to Intune, assign to device groups
+4. **Enforce**: Proactive Remediation runs detection/remediation on schedule
 
 ---
 
-## Installation & Setup
+## Repository Structure
 
-### Prerequisites
-
-- Windows 10/11 endpoint
-- PowerShell 5.1+
-- Microsoft Intune license
-- Git (recommended)
-
-### Repository Setup
-
-**Option 1: Clone with Git**
-```powershell
-git clone https://github.com/YOUR_ORG/ConfigurationBlender.git
-cd ConfigurationBlender
+```
+ConfigurationBlender/
+├── Builder/                    # WebUI Configuration Builder
+│   ├── ConfigurationBlender.html
+│   ├── css/styles.css
+│   └── js/
+│       ├── app.js              # Main application logic
+│       ├── checkTypes.js       # Check type form definitions
+│       ├── validation.js       # Configuration validation
+│       ├── export.js           # JSON export functionality
+│       └── accessibility.js    # A11y features
+│
+├── Configurations/             # Role configurations (one folder per role)
+│   └── US_CBL/                 # Example: US Computer Based Learning
+│       ├── Config.json         # Configuration definition
+│       └── Assets/             # Supporting files (gitignored)
+│           ├── Icons/          # Icon files for shortcuts
+│           ├── Scripts/        # PowerShell scripts to deploy
+│           ├── Drivers/        # Driver packages (INF files)
+│           └── XML/            # XML config files (AssignedAccess, etc.)
+│
+├── ProactiveRemediation/       # Intune Proactive Remediation scripts
+│   ├── Detect.ps1              # Detection engine
+│   └── Remediate.ps1           # Remediation engine
+│
+├── Packaging/                  # Win32 app packaging templates
+│   ├── Install.ps1             # Installer (copies files, sets registry)
+│   └── Detect.ps1              # Version detection (template with placeholders)
+│
+├── Tools/                      # Utility scripts
+│   ├── New-IntunePackage.ps1   # Creates .intunewin packages
+│   ├── New-ConfigurationRole.ps1  # Creates new role folder structure
+│   ├── Debug-AssignedAccess.ps1   # Troubleshooting helper
+│   └── IntuneWinAppUtil.exe    # Microsoft packaging tool (gitignored)
+│
+├── Output/                     # Generated packages (gitignored)
+├── DOCUMENTATION.md            # This file
+└── README.md                   # Executive overview
 ```
 
-**Option 2: Download ZIP**
-1. Download from GitHub
-2. Extract to desired location
+### Endpoint File Locations
 
-### External Tools
-
-Download the Microsoft Win32 Content Prep Tool:
-
-```powershell
-Invoke-WebRequest -Uri "https://github.com/microsoft/Microsoft-Win32-Content-Prep-Tool/releases/latest/download/IntuneWinAppUtil.exe" `
-                  -OutFile ".\Tools\IntuneWinAppUtil.exe"
-```
-
----
-
-## Configuration Builder (WebUI)
-
-Open `Builder/ConfigurationBlender.html` in any modern browser.
-
-### Features
-
-| Feature | Description |
-|---------|-------------|
-| Visual Check Editor | Add/edit checks without writing JSON |
-| Real-time JSON Preview | See generated Config.json as you build |
-| Dependency Validation | Warns when checks require prerequisites |
-| Import/Export | Load existing configs or export new ones |
-| Dark Mode | Toggle between light and dark themes |
-| Example Templates | Pre-built configurations for common scenarios |
-| Keyboard Shortcuts | Ctrl+O (Import), Ctrl+S (Export), Ctrl+N (Add Check) |
-
-### Check Types Reference
-
-```mermaid
-graph LR
-    subgraph Applications
-        A1[Application]
-    end
-
-    subgraph "Files & Folders"
-        B1[FilesExist]
-        B2[FolderExists]
-        B3[FolderEmpty]
-        B4[ShortcutExists]
-        B5[ShortcutsAllowList]
-    end
-
-    subgraph Registry
-        C1[RegistryValue]
-    end
-
-    subgraph "Hardware & Drivers"
-        D1[DriverInstalled]
-        D2[PrinterInstalled]
-        D3[NetworkAdapterConfiguration]
-    end
-
-    subgraph "System & Services"
-        E1[ServiceRunning]
-        E2[ScheduledTaskExists]
-        E3[WindowsFeature]
-        E4[AssignedAccess]
-    end
-
-    subgraph Security
-        F1[FirewallRule]
-        F2[CertificateInstalled]
-    end
-```
-
-| Check Type | Purpose | Key Properties |
-|------------|---------|----------------|
-| `Application` | Install or remove applications | `applicationName`, `ensureInstalled`, `searchPaths`, `uninstallPaths` |
-| `FilesExist` | Deploy single file or multiple files | `mode` (SingleFile/MultipleFiles), `destinationPath`, `sourceAssetPath` |
-| `FolderExists` | Ensure folder exists with optional file count | `path`, `minimumFileCount`, `sourceAssetPath` |
-| `FolderEmpty` | Ensure folder is empty | `paths`, `includeAllUserProfiles` |
-| `ShortcutExists` | Create/verify shortcuts | `path`, `targetPath`, `arguments`, `iconLocation` |
-| `ShortcutsAllowList` | Remove unauthorized shortcuts | `path`, `allowedShortcuts` |
-| `RegistryValue` | Set registry values | `path`, `name`, `value`, `type` |
-| `DriverInstalled` | Install device drivers | `driverName`, `driverClass`, `sourceAssetPath`, `minimumVersion` |
-| `PrinterInstalled` | Configure network printers | `printerName`, `driverName`, `printerIP`, `portName`, `portType` |
-| `NetworkAdapterConfiguration` | Configure network adapters (DHCP to static) | `identifyByCurrentSubnet`, `excludeSubnets`, `staticIPAddress` or `staticIPRange`, `dnsServers` |
-| `ServiceRunning` | Ensure services are running | `serviceName`, `startupType`, `ensureRunning` |
-| `ScheduledTaskExists` | Create scheduled tasks | `taskName`, `execute`, `arguments`, `trigger`, `principal` |
-| `WindowsFeature` | Enable/disable Windows features | `featureName`, `state` |
-| `AssignedAccess` | Configure kiosk mode | `configXmlPath` (recommended) or legacy: `profileId`, `allowedApps`, `startPins` |
-| `FirewallRule` | Manage firewall rules | `ruleName`, `direction`, `action`, `protocol`, `remoteAddress` |
-| `CertificateInstalled` | Deploy certificates | `thumbprint`, `subject`, `storeLocation`, `sourceAssetPath` |
-
-### Validation System
-
-The Builder validates configurations in real-time:
-
-```mermaid
-flowchart TD
-    A[User Saves Check] --> B{Required Fields?}
-    B -->|Missing| C[Show Error]
-    B -->|Complete| D{Duplicate Check?}
-    D -->|Yes| E[Prompt User]
-    D -->|No| F{Dependencies Met?}
-    F -->|No| G[Show Warning]
-    F -->|Yes| H[Save Check]
-
-    G --> H
-    E -->|Continue| H
-    E -->|Cancel| I[Return to Editor]
-```
-
-**Dependency Validation:**
-
-| Check Type | Required Dependency |
-|------------|---------------------|
-| `PrinterInstalled` | `DriverInstalled` with matching driver name |
-| `ShortcutExists` (with custom icon) | `FilesExist` deploying the icon file |
-| `AssignedAccess` | `ShortcutExists` for each pinned shortcut |
-
----
-
-## Config.json Schema
-
-### Metadata Fields
-
-```json
-{
-  "version": "1.0.0",
-  "role": "US_CBL",
-  "description": "US Computer Based Learning kiosk configuration",
-  "author": "John Smith",
-  "lastModified": "2025-12-03",
-  "checks": []
-}
-```
-
-| Field | Required | Description |
-|-------|----------|-------------|
-| `version` | Yes | Semantic version (X.Y.Z) |
-| `role` | Yes | Role identifier (e.g., US_CBL, CA_MPC) |
-| `description` | No | Human-readable description |
-| `author` | No | Configuration author |
-| `lastModified` | No | Last modification date (YYYY-MM-DD) |
-| `checks` | Yes | Array of check objects |
-
-### Check Structure
-
-```json
-{
-  "id": "1",
-  "name": "Human-readable name",
-  "type": "CheckType",
-  "enabled": true,
-  "properties": {
-    // Type-specific properties
-  }
-}
-```
-
-### Property Reference by Type
-
-<details>
-<summary><strong>Application</strong></summary>
-
-```json
-{
-  "type": "Application",
-  "properties": {
-    "applicationName": "Google Chrome",
-    "ensureInstalled": false,
-    "searchPaths": [
-      "C:\\Program Files*\\Google\\Chrome\\Application\\chrome.exe"
-    ],
-    "uninstallPaths": [
-      "C:\\Program Files*\\Google\\Chrome\\Application\\*\\Installer\\setup.exe"
-    ],
-    "uninstallArguments": "--uninstall --force-uninstall",
-    "installCommand": "winget install Google.Chrome",
-    "minimumVersion": "120.0.0.0"
-  }
-}
-```
-</details>
-
-<details>
-<summary><strong>FilesExist (MultipleFiles)</strong></summary>
-
-```json
-{
-  "type": "FilesExist",
-  "properties": {
-    "mode": "MultipleFiles",
-    "destinationPath": "C:\\Company\\Icons",
-    "files": ["app1.ico", "app2.ico", "app3.ico"],
-    "sourceAssetPath": "Icons"
-  }
-}
-```
-</details>
-
-<details>
-<summary><strong>FilesExist (SingleFile)</strong></summary>
-
-```json
-{
-  "type": "FilesExist",
-  "properties": {
-    "mode": "SingleFile",
-    "destinationPath": "C:\\Scripts\\MyScript.ps1",
-    "sourceAssetPath": "Scripts\\MyScript.ps1"
-  }
-}
-```
-</details>
-
-<details>
-<summary><strong>ShortcutExists</strong></summary>
-
-```json
-{
-  "type": "ShortcutExists",
-  "properties": {
-    "path": "C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\MyApp.lnk",
-    "targetPath": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
-    "arguments": "--kiosk https://example.com --edge-kiosk-type=public-browsing",
-    "iconLocation": "C:\\Company\\Icons\\myapp.ico",
-    "description": "My Application"
-  }
-}
-```
-</details>
-
-<details>
-<summary><strong>RegistryValue</strong></summary>
-
-```json
-{
-  "type": "RegistryValue",
-  "properties": {
-    "path": "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\Explorer",
-    "name": "HideRecommendedSection",
-    "value": 1,
-    "type": "DWord"
-  }
-}
-```
-
-**Registry Types:** `String`, `DWord`, `QWord`, `Binary`, `MultiString`, `ExpandString`
-</details>
-
-<details>
-<summary><strong>DriverInstalled (Printer)</strong></summary>
-
-```json
-{
-  "type": "DriverInstalled",
-  "properties": {
-    "driverName": "HP Universal Printing PCL 6",
-    "driverClass": "Printer",
-    "sourceAssetPath": "Drivers\\HP_UPD\\hpcu270u.inf",
-    "minimumVersion": "7.0.0.0"
-  }
-}
-```
-
-**Detection:**
-1. `Get-PrinterDriver -Name "driver name"` - checks print subsystem (not driver store)
-2. If `minimumVersion` specified, compares installed version
-3. FAIL if driver missing or version too old
-
-**Remediation:**
-1. `Get-PrinterDriver` - checks if already installed, skips if exists
-2. `pnputil /add-driver` - adds to driver store (exit code ignored)
-3. `Add-PrinterDriver` - registers with print subsystem
-4. `Get-PrinterDriver` - verifies success (this is the source of truth)
-
-**Important:** Driver name must match exactly what the INF installs. If remediation fails, check the "Available drivers" list in the error message.
-</details>
-
-<details>
-<summary><strong>PrinterInstalled</strong></summary>
-
-```json
-{
-  "type": "PrinterInstalled",
-  "properties": {
-    "printerName": "Office Printer",
-    "driverName": "HP Universal Printing PCL 6",
-    "printerIP": "192.168.1.100",
-    "portName": "IP_192.168.1.100",
-    "portType": "TCP",
-    "setAsDefault": true
-  }
-}
-```
-
-**Port Types:** `TCP` (default), `LPR` (requires `lprQueue`)
-
-**Detection:**
-1. `Get-Printer` - checks if printer exists
-2. Validates driver name, port name, port IP, port type match config
-3. FAIL if printer missing or any config mismatch
-
-**Remediation:**
-1. Verifies driver exists via `Get-PrinterDriver` (fails if missing)
-2. If printer exists but misconfigured:
-   - Stops spooler, clears stuck jobs, restarts spooler
-   - Removes misconfigured printer/port
-3. `Add-PrinterPort` - creates TCP or LPR port
-4. `Add-Printer` - creates printer with driver and port
-
-**Important:** `DriverInstalled` check must come before `PrinterInstalled` in Config.json.
-</details>
-
-<details>
-<summary><strong>NetworkAdapterConfiguration (Subnet-based DHCP to Static - Single IP)</strong></summary>
-
-Use this mode when devices have dual NICs and you need to convert a private equipment network from DHCP to static IP while protecting the corporate network.
-
-```json
-{
-  "type": "NetworkAdapterConfiguration",
-  "name": "Private Equipment Network",
-  "properties": {
-    "identifyByCurrentSubnet": "192.168.0.0/24",
-    "excludeSubnets": ["10.0.0.0/8", "172.16.0.0/12"],
-    "staticIPAddress": "192.168.0.100",
-    "subnetPrefixLength": 24,
-    "defaultGateway": "",
-    "dnsServers": [],
-    "registerInDns": false,
-    "interfaceMetric": 9999,
-    "networkCategory": "Private"
-  }
-}
-```
-
-**Key Properties:**
-- `identifyByCurrentSubnet`: Find wired adapter with IP in this range (CIDR notation)
-- `excludeSubnets`: Never modify adapters in these subnets (corporate protection)
-- `staticIPAddress`: Exact static IP to assign (use for single-device scenarios)
-- `defaultGateway`: Empty = no gateway (isolates network from routing)
-- `dnsServers`: Empty array = clear DNS (prevents DNS conflicts)
-- `registerInDns`: `false` = don't register in DNS
-- `interfaceMetric`: High value = low priority (corporate NIC wins routing)
-
-**Built-in Safeguards:**
-1. Only wired adapters (802.3) are considered
-2. Adapters with gateway outside target subnet are skipped
-3. Virtual adapters are ignored
-4. Excluded subnets are never touched
-</details>
-
-<details>
-<summary><strong>NetworkAdapterConfiguration (Dual-NIC DHCP to Static - IP Range)</strong></summary>
-
-Use this mode when **multiple devices** at the same location have dual NICs and need unique static IPs on the private network. The check only applies to devices with 2+ active wired connections.
-
-```json
-{
-  "type": "NetworkAdapterConfiguration",
-  "name": "Private Equipment Network (Multi-Device)",
-  "properties": {
-    "staticIPRange": "192.168.20.1-192.168.20.20",
-    "subnetPrefixLength": 24,
-    "defaultGateway": "",
-    "dnsServers": [],
-    "registerInDns": false,
-    "interfaceMetric": 9999,
-    "networkCategory": "Private"
-  }
-}
-```
-
-**How IP Range Mode Works:**
-
-1. **Detection** (3 conditions must be true for FAIL):
-   - Device has **2+ active wired connections**
-   - One adapter has a **DHCP-assigned IP** in the specified range
-   - That adapter needs to be converted to static
-
-   If device has <2 wired adapters → **PASS** (check doesn't apply)
-   If adapter in range is already static → **PASS** (already compliant)
-   If adapter in range is DHCP → **FAIL** (needs remediation)
-
-2. **Remediation**:
-   - Finds the adapter with DHCP IP in the range
-   - Performs ping sweep to find an unused IP in the range
-   - Converts adapter from DHCP to static with the available IP
-   - Applies additional settings (DNS, metric, category, etc.)
-
-**Key Properties:**
-- `staticIPRange`: IP range in format `startIP-endIP` (e.g., `192.168.20.1-192.168.20.20`)
-- Use **either** `staticIPAddress` or `staticIPRange`, not both
-
-**Example Scenario:**
-A site has 5 kiosk devices, each with:
-- NIC 1: Corporate network (10.x.x.x via DHCP) - untouched
-- NIC 2: Private equipment network (192.168.20.x via DHCP) - needs static
-
-Device 1 remediation:
-1. Detects NIC 2 has DHCP IP 192.168.20.50 (in range)
-2. Pings 192.168.20.1 - no response
-3. Assigns 192.168.20.1 as static to NIC 2
-
-Device 2 remediation:
-1. Detects NIC 2 has DHCP IP 192.168.20.51 (in range)
-2. Pings 192.168.20.1 - **responds** (Device 1 has it)
-3. Pings 192.168.20.2 - no response
-4. Assigns 192.168.20.2 as static to NIC 2
-
-**Built-in Safeguards:**
-1. Only applies to devices with 2+ active wired adapters
-2. Only modifies adapters with DHCP IP in the specified range
-3. Corporate NICs (outside range) are never touched
-4. Ping sweep has 1-second timeout per IP
-5. Remediation fails cleanly if no IPs are available
-</details>
-
-<details>
-<summary><strong>NetworkAdapterConfiguration (Traditional)</strong></summary>
-
-Use this mode when you know the adapter name, description, or MAC address.
-
-```json
-{
-  "type": "NetworkAdapterConfiguration",
-  "properties": {
-    "adapterName": "Ethernet 2",
-    "staticIPAddress": "192.168.1.50",
-    "subnetPrefixLength": 24,
-    "defaultGateway": "192.168.1.1",
-    "dnsServers": ["8.8.8.8", "8.8.4.4"],
-    "networkCategory": "Private",
-    "interfaceMetric": 10,
-    "ensureEnabled": true
-  }
-}
-```
-</details>
-
-<details>
-<summary><strong>AssignedAccess</strong></summary>
-
-Configure Windows 11 multi-app kiosk mode. The recommended approach uses an external XML configuration file:
-
-**Recommended: XML-based configuration**
-```json
-{
-  "type": "AssignedAccess",
-  "properties": {
-    "configXmlPath": "XML/AssignedAccessConfig.xml"
-  }
-}
-```
-
-Place your Assigned Access XML file in `Assets/XML/`. The detection verifies:
-- kioskUser0 exists and is enabled
-- AutoLogon is configured for kioskUser0
-- Profile ID from XML exists in registry
-- Kiosk user is mapped to the correct profile
-- Taskbar setting matches
-
-**Legacy: Property-based configuration (deprecated)**
-```json
-{
-  "type": "AssignedAccess",
-  "properties": {
-    "profileId": "{GUID}",
-    "displayName": "Kiosk Profile",
-    "allowedApps": [
-      "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
-      "C:\\Windows\\System32\\osk.exe"
-    ],
-    "startPins": [
-      "%ALLUSERSPROFILE%\\Microsoft\\Windows\\Start Menu\\Programs\\MyApp.lnk"
-    ],
-    "showTaskbar": true,
-    "allowedNamespaces": ["Downloads"]
-  }
-}
-```
-
-See `Configurations/US_CBL/Assets/XML/AssignedAccessConfig.xml` for a complete example.
-</details>
-
----
-
-## Deployment Pipeline
-
-### Creating a Role Configuration
-
-```mermaid
-flowchart LR
-    A[Run New-ConfigurationRole.ps1] --> B[Creates folder structure]
-    B --> C[Opens Builder in browser]
-    C --> D[Define checks]
-    D --> E[Export Config.json]
-    E --> F[Add Assets to folder]
-```
-
-```powershell
-# Create new role structure
-.\Tools\New-ConfigurationRole.ps1 -Role "US_MPC"
-
-# This creates:
-# Configurations/US_MPC/
-# Configurations/US_MPC/Assets/
-```
-
-### Packaging for Intune
-
-```powershell
-# Interactive mode - shows menu of available roles
-.\Tools\New-IntunePackage.ps1
-
-# Direct mode - package specific role
-.\Tools\New-IntunePackage.ps1 -Role "US_CBL"
-
-# Preview mode
-.\Tools\New-IntunePackage.ps1 -Role "US_CBL" -WhatIf
-```
-
-**Output:** `Output/US_CBL_v1.0.0.intunewin`
-
-### Win32 App Settings
-
-| Setting | Value |
-|---------|-------|
-| Install command | `powershell.exe -ExecutionPolicy Bypass -File Install.ps1` |
-| Uninstall command | `cmd.exe /c echo No uninstall` |
-| Detection | Custom script (`Packaging/Detect.ps1`) |
-| Install behavior | System |
-
-### Updating Configurations
-
-```mermaid
-flowchart TD
-    A[Edit Config.json] --> B[Bump version]
-    B --> C[Run New-IntunePackage.ps1]
-    C --> D[Upload new Win32 app to Intune]
-    D --> E[Configure supersedence]
-    E --> F[Assign to device group]
-```
-
-**Version Bump Guidelines:**
-- **Major** (1.0.0 → 2.0.0): Breaking changes
-- **Minor** (1.0.0 → 1.1.0): New checks or features
-- **Patch** (1.0.0 → 1.0.1): Bug fixes or minor changes
-
----
-
-## Engine Scripts
-
-### Detection (Detect.ps1)
-
-Runs on schedule via Intune Proactive Remediation. Checks all enabled items in Config.json.
-
-```mermaid
-flowchart TD
-    A[Start] --> B[Load Config.json]
-    B --> C[Loop through checks]
-    C --> D{Check enabled?}
-    D -->|No| C
-    D -->|Yes| E[Run Test-CheckType]
-    E --> F{Passed?}
-    F -->|Yes| G[Log Pass]
-    F -->|No| H[Log Fail]
-    G --> C
-    H --> C
-    C --> I{More checks?}
-    I -->|Yes| C
-    I -->|No| J{Any failures?}
-    J -->|No| K[Exit 0 - Compliant]
-    J -->|Yes| L[Exit 1 - Non-Compliant]
-```
-
-### Remediation (Remediate.ps1)
-
-Runs only when Detect.ps1 exits with code 1.
-
-```mermaid
-flowchart TD
-    A[Start] --> B[Load Config.json]
-    B --> C[Loop through checks]
-    C --> D{Check enabled?}
-    D -->|No| C
-    D -->|Yes| E[Run Test-CheckType]
-    E --> F{Passed?}
-    F -->|Yes| C
-    F -->|No| G[Run Repair-CheckType]
-    G --> H[Log action]
-    H --> C
-    C --> I{More checks?}
-    I -->|Yes| C
-    I -->|No| J[Exit 0]
-```
-
-### Execution Context
-
-Both scripts run as `NT AUTHORITY\SYSTEM`:
-
-| Item | SYSTEM Behavior | Recommendation |
-|------|-----------------|----------------|
-| `HKCU:\` registry | Modifies SYSTEM's hive | Use `HKLM:\` |
-| `$env:USERPROFILE` | `C:\Windows\System32\config\systemprofile` | Use explicit paths |
-| `$env:TEMP` | `C:\Windows\Temp` | Be aware for temp operations |
-| User desktops | Accessible but need explicit path | Use `C:\Users\Public\Desktop` |
-
----
-
-## File Paths & Registry
-
-### Production Paths
+When deployed, files are stored at:
 
 | Purpose | Path |
 |---------|------|
@@ -756,29 +124,848 @@ Both scripts run as `NT AUTHORITY\SYSTEM`:
 | `HKLM:\SOFTWARE\ConfigurationBlender\[ROLE]\InstalledDate` | Deployment timestamp |
 | `HKLM:\SOFTWARE\ConfigurationBlender\[ROLE]\LastRemediationTime` | Last remediation run |
 
-### Logging
+---
 
-**Log Files:**
-- `Detection_YYYYMMDD_HHMMSS.json` - Detection results
-- `Remediation_YYYYMMDD_HHMMSS.json` - Remediation actions
+## Configuration Files
 
-**Log Structure:**
+### Config.json Schema
+
 ```json
 {
-  "Timestamp": "2025-12-03T14:30:00",
-  "ConfigVersion": "1.0.0",
-  "Role": "US_CBL",
-  "Compliant": false,
-  "Checks": [
-    {
-      "Id": "1",
-      "Name": "Check Name",
-      "Type": "CheckType",
-      "Passed": true,
-      "Issue": null
-    }
+  "version": "1.0.0",
+  "role": "US_CBL",
+  "description": "US Computer Based Learning kiosk configuration",
+  "author": "John Smith",
+  "lastModified": "2025-12-04",
+  "checks": []
+}
+```
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `version` | Yes | Semantic version (X.Y.Z) - bump on each change |
+| `role` | Yes | Role identifier, must match folder name |
+| `description` | No | Human-readable description |
+| `author` | No | Configuration author |
+| `lastModified` | No | Last modification date (YYYY-MM-DD) |
+| `checks` | Yes | Array of check objects |
+
+### Check Structure
+
+Each check in the `checks` array follows this structure:
+
+```json
+{
+  "id": "1",
+  "name": "Human-readable name",
+  "type": "CheckType",
+  "enabled": true,
+  "properties": {
+    // Type-specific properties
+  }
+}
+```
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `id` | Yes | Unique identifier within this config |
+| `name` | Yes | Human-readable name (shown in logs) |
+| `type` | Yes | Check type (see Check Types Reference) |
+| `enabled` | Yes | Set `false` to skip this check |
+| `properties` | Yes | Type-specific configuration properties |
+
+---
+
+## Check Types Reference
+
+Configuration Blender supports 16 check types. Each section below documents the properties, detection logic, and remediation behavior.
+
+### Application
+
+Manages application installation state. Can ensure an application is installed or removed.
+
+**Properties:**
+```json
+{
+  "applicationName": "Google Chrome",
+  "ensureInstalled": false,
+  "searchPaths": [
+    "C:\\Program Files*\\Google\\Chrome\\Application\\chrome.exe",
+    "C:\\Users\\*\\AppData\\Local\\Google\\Chrome\\Application\\chrome.exe"
+  ],
+  "uninstallPaths": [
+    "C:\\Program Files*\\Google\\Chrome\\Application\\*\\Installer\\setup.exe"
+  ],
+  "uninstallArguments": "--uninstall --force-uninstall",
+  "installCommand": "winget install Google.Chrome",
+  "minimumVersion": "120.0.0.0"
+}
+```
+
+**Detection:**
+1. Search for files matching `searchPaths` using wildcard expansion
+2. If `ensureInstalled: true` - FAIL if not found
+3. If `ensureInstalled: false` - FAIL if found
+4. If `minimumVersion` specified, compare file version
+
+**Remediation:**
+- If should be installed: Execute `installCommand`
+- If should not be installed: Run uninstaller from `uninstallPaths` with `uninstallArguments`
+
+---
+
+### FilesExist
+
+Deploys files from assets to destination. Supports single file or multiple files mode.
+
+**Properties (MultipleFiles mode):**
+```json
+{
+  "mode": "MultipleFiles",
+  "destinationPath": "C:\\Company\\Icons",
+  "files": ["app1.ico", "app2.ico", "app3.ico"],
+  "sourceAssetPath": "Icons"
+}
+```
+
+**Properties (SingleFile mode):**
+```json
+{
+  "mode": "SingleFile",
+  "destinationPath": "C:\\Scripts\\MyScript.ps1",
+  "sourceAssetPath": "Scripts\\MyScript.ps1"
+}
+```
+
+**Detection:**
+1. MultipleFiles: Check if all files in `files` array exist in `destinationPath`
+2. SingleFile: Check if file exists at exact `destinationPath`
+3. FAIL if any files are missing
+
+**Remediation:**
+1. Create destination directory if needed
+2. Copy missing files from `Assets\[sourceAssetPath]`
+
+---
+
+### FolderExists
+
+Ensures a folder exists with optional minimum file count.
+
+**Properties:**
+```json
+{
+  "path": "C:\\ProgramData\\Microsoft\\User Account Pictures",
+  "minimumFileCount": 1,
+  "sourceAssetPath": "AccountPictures"
+}
+```
+
+**Detection:**
+1. Check if folder exists at `path`
+2. If `minimumFileCount` > 0, count files in folder
+3. FAIL if folder missing or file count below minimum
+
+**Remediation:**
+1. Create folder if missing
+2. If `sourceAssetPath` specified, copy files from assets
+
+---
+
+### FolderEmpty
+
+Ensures specified folders are empty. Used for clearing desktops.
+
+**Properties:**
+```json
+{
+  "paths": [
+    "$env:PUBLIC\\Desktop",
+    "$env:USERPROFILE\\Desktop"
+  ],
+  "includeAllUserProfiles": true
+}
+```
+
+**Detection:**
+1. Expand environment variables in paths
+2. If `includeAllUserProfiles`, add all user Desktop folders
+3. Count items in all paths
+4. FAIL if total items > 0
+
+**Remediation:**
+1. Delete all items from specified folders
+2. Continue on individual file deletion failures
+
+---
+
+### ShortcutExists
+
+Creates or validates Windows shortcuts (.lnk files).
+
+**Properties:**
+```json
+{
+  "path": "C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\MyApp.lnk",
+  "targetPath": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
+  "arguments": "--kiosk https://example.com --edge-kiosk-type=public-browsing",
+  "iconLocation": "C:\\Company\\Icons\\myapp.ico",
+  "description": "My Application"
+}
+```
+
+**Detection:**
+1. Check if shortcut file exists at `path`
+2. Verify `targetPath` matches
+3. Verify `arguments` match
+4. FAIL if missing or properties mismatch
+
+**Remediation:**
+1. Create parent directory if needed
+2. Create/update shortcut with WScript.Shell COM object
+
+---
+
+### ShortcutsAllowList
+
+Removes unauthorized shortcuts from a folder. Only shortcuts in the allow list are kept.
+
+**Properties:**
+```json
+{
+  "path": "C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs",
+  "allowedShortcuts": [
+    "GTA Time Clock.lnk",
+    "OneWalmart.lnk",
+    "ULearn.lnk"
   ]
 }
+```
+
+**Detection:**
+1. Get all .lnk files in `path`
+2. Compare against `allowedShortcuts` array
+3. FAIL if any shortcuts not in allow list exist
+
+**Remediation:**
+1. Delete all shortcuts not in allow list
+
+---
+
+### RegistryValue
+
+Sets or validates registry values.
+
+**Properties:**
+```json
+{
+  "path": "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\Explorer",
+  "name": "HideRecommendedSection",
+  "value": 1,
+  "type": "DWord"
+}
+```
+
+**Registry Types:** `String`, `DWord`, `QWord`, `Binary`, `MultiString`, `ExpandString`
+
+**Detection:**
+1. Check if registry path exists
+2. Check if value exists with correct name
+3. Compare value against expected
+4. FAIL if path missing, value missing, or value mismatch
+
+**Remediation:**
+1. Create registry path if needed
+2. Set value with specified type
+
+---
+
+### DriverInstalled
+
+Installs device drivers. Special handling for printer drivers.
+
+**Properties:**
+```json
+{
+  "driverName": "Lexmark Universal v2 XL",
+  "driverClass": "Printer",
+  "sourceAssetPath": "Drivers\\Lexmark_Universal_v2_UD1_XL\\LMUD1p40.inf",
+  "minimumVersion": "3.0.7.0"
+}
+```
+
+**Detection (Printer drivers):**
+1. `Get-PrinterDriver -Name [driverName]` - checks print subsystem
+2. If `minimumVersion` specified, compare versions using:
+   - DriverVersion property
+   - MajorVersion.MinorVersion fallback
+   - Get-WindowsDriver query against InfPath
+3. FAIL if driver not registered or version too old
+
+**Detection (Other drivers):**
+1. `Get-WindowsDriver -Online` - search driver store
+2. Compare version if `minimumVersion` specified
+3. FAIL if driver not found
+
+**Remediation (Printer drivers):**
+1. Check if already installed via `Get-PrinterDriver` - skip if exists
+2. `pnputil /add-driver [infPath] /install` - add to driver store
+3. `Add-PrinterDriver -Name [driverName]` - register with print subsystem
+4. `Get-PrinterDriver -Name [driverName]` - verify success (source of truth)
+5. If verification fails, list available drivers in error message
+
+**Remediation (Other drivers):**
+1. `pnputil /add-driver [infPath] /install`
+2. Verify with `Get-WindowsDriver`
+
+**Important:** Driver name must exactly match what the INF installs. Check error messages for "Available drivers" list if remediation fails.
+
+---
+
+### PrinterInstalled
+
+Configures network printers. Requires corresponding DriverInstalled check.
+
+**Properties:**
+```json
+{
+  "printerName": "Personnel",
+  "driverName": "Lexmark Universal v2 XL",
+  "portName": "mfpr01",
+  "printerIP": "mfpr01",
+  "portType": "TCP",
+  "setAsDefault": true,
+  "lprQueue": "lp"
+}
+```
+
+**Port Types:** `TCP` (default), `LPR` (requires `lprQueue`)
+
+**Detection:**
+1. `Get-Printer -Name [printerName]` - check if printer exists
+2. Validate driver name matches
+3. Validate port name matches
+4. `Get-PrinterPort -Name [portName]` - validate port configuration:
+   - Port type (TCP vs LPR)
+   - PrinterHostAddress matches `printerIP`
+   - LprQueueName matches `lprQueue` (if LPR)
+5. FAIL if printer missing or any config mismatch
+
+**Remediation:**
+1. Verify driver exists via `Get-PrinterDriver` - fail if missing
+2. If printer exists but misconfigured:
+   - Stop spooler service
+   - Clear stuck print jobs from spool directory
+   - Restart spooler
+   - Remove misconfigured printer and port
+3. `Add-PrinterPort` - create TCP or LPR port
+4. `Add-Printer` - create printer with driver and port
+5. Set as default if `setAsDefault: true`
+
+**Important:** DriverInstalled check must come before PrinterInstalled in Config.json.
+
+---
+
+### ServiceRunning
+
+Manages Windows service state and startup type.
+
+**Properties:**
+```json
+{
+  "serviceName": "Spooler",
+  "startupType": "Automatic",
+  "ensureRunning": true
+}
+```
+
+**Startup Types:** `Automatic`, `Manual`, `Disabled`
+
+**Detection:**
+1. Get service by name
+2. Check startup type matches
+3. If `ensureRunning`, check Status is "Running"
+4. FAIL if startup type wrong or not running
+
+**Remediation:**
+1. Set startup type
+2. Start service if `ensureRunning`
+
+---
+
+### ScheduledTaskExists
+
+Creates scheduled tasks.
+
+**Properties:**
+```json
+{
+  "taskName": "ManifestManipulator",
+  "taskPath": "\\",
+  "execute": "Powershell.exe",
+  "arguments": "-ExecutionPolicy Bypass -File C:\\Scripts\\MyScript.ps1",
+  "trigger": "AtLogOn",
+  "runLevel": "Highest",
+  "principal": "NT AUTHORITY\\SYSTEM"
+}
+```
+
+**Triggers:** `AtLogOn`, `AtStartup`
+
+**Detection:**
+1. `Get-ScheduledTask -TaskName [taskName]`
+2. FAIL if task does not exist
+
+**Remediation:**
+1. Create task action, trigger, principal, settings
+2. `Register-ScheduledTask`
+
+---
+
+### WindowsFeature
+
+Enables or disables Windows optional features.
+
+**Properties:**
+```json
+{
+  "featureName": "Microsoft-Windows-Subsystem-Linux",
+  "state": "Enabled"
+}
+```
+
+**States:** `Enabled`, `Disabled`
+
+**Detection:**
+1. `Get-WindowsOptionalFeature -FeatureName [featureName]`
+2. Compare state
+3. FAIL if state mismatch
+
+**Remediation:**
+1. `Enable-WindowsOptionalFeature` or `Disable-WindowsOptionalFeature`
+2. `-NoRestart` flag used
+
+---
+
+### FirewallRule
+
+Manages Windows Firewall rules.
+
+**Properties:**
+```json
+{
+  "ruleName": "MyApp-Inbound",
+  "displayName": "My Application Inbound",
+  "direction": "Inbound",
+  "action": "Allow",
+  "protocol": "TCP",
+  "localPort": "8080",
+  "remoteAddress": "Any",
+  "enabled": true
+}
+```
+
+**Detection:**
+1. `Get-NetFirewallRule -Name [ruleName]`
+2. Validate direction, action, enabled state
+3. FAIL if rule missing or properties mismatch
+
+**Remediation:**
+1. Create or update rule with `New-NetFirewallRule` or `Set-NetFirewallRule`
+
+---
+
+### CertificateInstalled
+
+Deploys certificates to Windows certificate stores.
+
+**Properties:**
+```json
+{
+  "thumbprint": "ABC123...",
+  "subject": "CN=My Certificate",
+  "storeLocation": "LocalMachine",
+  "storeName": "My",
+  "sourceAssetPath": "Certificates\\mycert.cer",
+  "minimumDaysValid": 30,
+  "issuer": "My CA"
+}
+```
+
+**Detection:**
+1. Search certificate store by thumbprint or subject
+2. Check if certificate is currently valid (NotBefore < now < NotAfter)
+3. If `minimumDaysValid`, check days until expiry
+4. If `issuer` specified, validate issuer matches
+5. FAIL if not found, expired, or about to expire
+
+**Remediation:**
+1. Determine file type from extension (.cer, .crt, .pfx, .p12)
+2. `Import-Certificate` for .cer/.crt files
+3. `Import-PfxCertificate` for .pfx/.p12 (requires `pfxPassword`)
+
+---
+
+### AssignedAccess
+
+Configures Windows 11 multi-app kiosk mode.
+
+**Properties (XML-based - Recommended):**
+```json
+{
+  "configXmlPath": "XML/AssignedAccessConfig.xml"
+}
+```
+
+**Properties (Legacy property-based):**
+```json
+{
+  "profileId": "{GUID}",
+  "displayName": "Kiosk Profile",
+  "allowedApps": [
+    "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe"
+  ],
+  "startPins": [
+    "%ALLUSERSPROFILE%\\Microsoft\\Windows\\Start Menu\\Programs\\MyApp.lnk"
+  ],
+  "showTaskbar": true,
+  "allowedNamespaces": ["Downloads"]
+}
+```
+
+**Detection (XML-based):**
+1. Check running as SYSTEM (required)
+2. Parse expected XML to extract Profile ID
+3. Verify kioskUser0 exists and is enabled
+4. Verify AutoLogon configured for kioskUser0
+5. Check AssignedAccessConfiguration registry:
+   - Profile exists at `HKLM:\SOFTWARE\Microsoft\Windows\AssignedAccessConfiguration\Profiles\{ProfileId}`
+   - Kiosk user SID mapped to profile in Configs
+   - Taskbar setting matches
+6. FAIL if any check fails
+
+**Remediation:**
+1. Verify running as SYSTEM
+2. Get MDM_AssignedAccess CIM instance
+3. Read XML from assets (or generate from legacy properties)
+4. HTML-encode and set Configuration property
+5. Apply via `Set-CimInstance`
+
+**Important:** Must run as NT AUTHORITY\SYSTEM. When testing locally, use PsExec.
+
+---
+
+### NetworkAdapterConfiguration
+
+Configures network adapter settings. Supports DHCP-to-static conversion.
+
+**Properties (Subnet-based identification):**
+```json
+{
+  "identifyByCurrentSubnet": "192.168.0.0/24",
+  "excludeSubnets": ["10.0.0.0/8", "172.16.0.0/12"],
+  "staticIPAddress": "192.168.0.100",
+  "subnetPrefixLength": 24,
+  "defaultGateway": "",
+  "dnsServers": [],
+  "registerInDns": false,
+  "interfaceMetric": 9999,
+  "networkCategory": "Private"
+}
+```
+
+**Properties (IP Range mode for multi-device scenarios):**
+```json
+{
+  "staticIPRange": "192.168.20.1-192.168.20.20",
+  "subnetPrefixLength": 24,
+  "defaultGateway": "",
+  "dnsServers": [],
+  "interfaceMetric": 9999
+}
+```
+
+**Properties (Traditional identification):**
+```json
+{
+  "adapterName": "Ethernet 2",
+  "staticIPAddress": "192.168.1.50",
+  "subnetPrefixLength": 24,
+  "defaultGateway": "192.168.1.1",
+  "dnsServers": ["8.8.8.8", "8.8.4.4"]
+}
+```
+
+**Detection (Subnet-based):**
+1. Find wired (802.3) adapter with IP in `identifyByCurrentSubnet`
+2. Skip adapters in `excludeSubnets`
+3. Skip adapters with gateway outside target subnet (corporate protection)
+4. Check static IP, prefix, gateway, DNS, metric, category
+5. FAIL if any mismatch
+
+**Detection (IP Range mode):**
+1. Requires 2+ active wired adapters (otherwise PASS - doesn't apply)
+2. Check if any adapter has DHCP IP in the range
+3. FAIL if DHCP adapter found in range (needs static)
+
+**Remediation (Single IP):**
+1. Remove existing IP configuration
+2. Set static IP with New-NetIPAddress
+3. Configure DNS, metric, network category
+
+**Remediation (IP Range):**
+1. Find adapter with DHCP IP in range
+2. Ping sweep to find available IP in range
+3. Assign first available IP as static
+4. Apply additional settings
+
+**Safeguards:**
+- Only wired (802.3) adapters considered
+- Virtual adapters ignored
+- Excluded subnets never touched
+- Gateway-based protection for corporate NICs
+
+---
+
+## Engine Scripts
+
+### Detect.ps1 (ProactiveRemediation)
+
+The detection engine runs on schedule via Intune Proactive Remediation.
+
+**Location:** `ProactiveRemediation/Detect.ps1`
+
+**Flow:**
+```
+Start
+  |
+  v
+Load C:\ProgramData\ConfigurationBlender\Config.json
+  |
+  v
+For each enabled check:
+  |
+  +---> Call Test-[CheckType] function
+  |        |
+  |        v
+  |     Returns { Passed: bool, Issue: string }
+  |        |
+  +--------+
+  |
+  v
+Any failures?
+  |
+  +---> No  --> Exit 0 (Compliant)
+  |
+  +---> Yes --> Exit 1 (Non-Compliant, triggers Remediate.ps1)
+```
+
+**Exit Codes:**
+- `0` - Compliant (all checks passed)
+- `1` - Non-compliant (one or more checks failed)
+
+**Logging:** Writes `Detection_YYYYMMDD_HHMMSS.json` to Logs folder.
+
+---
+
+### Remediate.ps1 (ProactiveRemediation)
+
+The remediation engine runs only when Detect.ps1 exits with code 1.
+
+**Location:** `ProactiveRemediation/Remediate.ps1`
+
+**Flow:**
+```
+Start
+  |
+  v
+Load C:\ProgramData\ConfigurationBlender\Config.json
+  |
+  v
+For each enabled check:
+  |
+  +---> Call Repair-[CheckType] function
+  |        |
+  |        v
+  |     Returns { Success: bool, Action: string }
+  |        |
+  +--------+
+  |
+  v
+Log actions and exit
+```
+
+**Exit Codes:**
+- `0` - All remediations successful
+- `1` - One or more remediations failed
+
+**Logging:** Writes `Remediation_YYYYMMDD_HHMMSS.json` to Logs folder.
+
+---
+
+### Execution Context
+
+Both scripts run as `NT AUTHORITY\SYSTEM`:
+
+| Item | SYSTEM Behavior | Recommendation |
+|------|-----------------|----------------|
+| `HKCU:\` registry | Modifies SYSTEM's hive | Use `HKLM:\` |
+| `$env:USERPROFILE` | `C:\Windows\System32\config\systemprofile` | Use explicit paths |
+| `$env:TEMP` | `C:\Windows\Temp` | Be aware for temp operations |
+| User desktops | Accessible via full path | Enumerate user profiles |
+
+---
+
+## Deployment Pipeline
+
+### Step 1: Create Role Configuration
+
+```powershell
+# Create new role folder structure
+.\Tools\New-ConfigurationRole.ps1 -Role "US_MPC"
+
+# Creates:
+# Configurations/US_MPC/
+# Configurations/US_MPC/Assets/
+```
+
+Use the WebUI Builder or edit Config.json directly.
+
+### Step 2: Add Assets
+
+Place supporting files in `Assets/` subdirectories:
+- `Assets/Icons/` - Icon files for shortcuts
+- `Assets/Scripts/` - PowerShell scripts
+- `Assets/Drivers/` - Driver packages
+- `Assets/XML/` - XML configuration files
+
+**Note:** Assets folders are gitignored. Distribute via secure file share or artifact storage.
+
+### Step 3: Package for Intune
+
+```powershell
+# Interactive mode - shows menu of roles
+.\Tools\New-IntunePackage.ps1
+
+# Direct mode - package specific role
+.\Tools\New-IntunePackage.ps1 -Role "US_CBL"
+
+# Preview mode
+.\Tools\New-IntunePackage.ps1 -Role "US_CBL" -WhatIf
+```
+
+**Output:** `Output/US_CBL_v1.0.0.intunewin`
+
+### Step 4: Deploy Win32 App
+
+Upload to Intune with these settings:
+
+| Setting | Value |
+|---------|-------|
+| Install command | `powershell.exe -ExecutionPolicy Bypass -File Install.ps1` |
+| Uninstall command | `cmd.exe /c echo No uninstall` |
+| Detection | Custom script (use generated `Detect.ps1`) |
+| Install behavior | System |
+| Architecture | 64-bit |
+| Minimum OS | Windows 10 1607 |
+
+### Step 5: Configure Proactive Remediation
+
+Create Proactive Remediation policy using scripts from `ProactiveRemediation/`:
+
+1. Upload `Detect.ps1` as detection script
+2. Upload `Remediate.ps1` as remediation script
+3. Run as: SYSTEM
+4. Schedule: Hourly or as needed
+5. Assign to same device groups as Win32 app
+
+### Step 6: Update Configurations
+
+1. Edit Config.json
+2. Bump version number
+3. Run `New-IntunePackage.ps1`
+4. Upload new Win32 app to Intune
+5. Configure supersedence (new replaces old)
+
+**Version Bump Guidelines:**
+- **Major** (1.0.0 → 2.0.0): Breaking changes, new check types
+- **Minor** (1.0.0 → 1.1.0): New checks or features
+- **Patch** (1.0.0 → 1.0.1): Bug fixes, property changes
+
+---
+
+## Configuration Builder
+
+Open `Builder/ConfigurationBlender.html` in any modern browser.
+
+### Features
+
+| Feature | Description |
+|---------|-------------|
+| Visual Check Editor | Add/edit checks without writing JSON |
+| Real-time JSON Preview | See generated Config.json as you build |
+| Dependency Validation | Warns when checks require prerequisites |
+| Import/Export | Load existing configs or export new ones |
+| Dark Mode | Toggle between light and dark themes |
+| Example Templates | Pre-built configurations for common scenarios |
+| Keyboard Shortcuts | Ctrl+O (Import), Ctrl+S (Export), Ctrl+N (Add Check) |
+
+### Dependency Validation
+
+The builder warns about missing dependencies:
+
+| Check Type | Required Dependency |
+|------------|---------------------|
+| `PrinterInstalled` | `DriverInstalled` with matching driver name |
+| `ShortcutExists` (with custom icon) | `FilesExist` deploying the icon file |
+| `AssignedAccess` | `ShortcutExists` for each pinned shortcut |
+
+---
+
+## Tools Reference
+
+### New-IntunePackage.ps1
+
+Creates `.intunewin` packages for Intune deployment.
+
+```powershell
+# Interactive mode
+.\Tools\New-IntunePackage.ps1
+
+# Package specific role
+.\Tools\New-IntunePackage.ps1 -Role "US_CBL"
+
+# Custom output directory
+.\Tools\New-IntunePackage.ps1 -Role "US_CBL" -OutputPath "C:\Packages"
+
+# Preview only
+.\Tools\New-IntunePackage.ps1 -Role "US_CBL" -WhatIf
+```
+
+**What it does:**
+1. Validates `Config.json` exists and is valid
+2. Copies `Packaging/Install.ps1` to role folder
+3. Generates `Detect.ps1` with role/version placeholders replaced
+4. Runs `IntuneWinAppUtil.exe` to create package
+5. Renames output to `ROLE_vX.Y.Z.intunewin`
+
+**Prerequisite:** Download `IntuneWinAppUtil.exe` to `Tools/`:
+```powershell
+Invoke-WebRequest -Uri "https://github.com/microsoft/Microsoft-Win32-Content-Prep-Tool/releases/latest/download/IntuneWinAppUtil.exe" -OutFile ".\Tools\IntuneWinAppUtil.exe"
+```
+
+### New-ConfigurationRole.ps1
+
+Creates new role folder structure.
+
+```powershell
+.\Tools\New-ConfigurationRole.ps1 -Role "US_MPC"
+```
+
+Creates:
+```
+Configurations/US_MPC/
+Configurations/US_MPC/Assets/
 ```
 
 ---
@@ -788,19 +975,21 @@ Both scripts run as `NT AUTHORITY\SYSTEM`:
 ### Local Testing
 
 ```powershell
-# 1. Set up test environment
+# 1. Deploy config to test location
 New-Item -ItemType Directory -Path "C:\ProgramData\ConfigurationBlender" -Force
 Copy-Item "Configurations\US_CBL\Config.json" "C:\ProgramData\ConfigurationBlender\" -Force
 Copy-Item "Configurations\US_CBL\Assets" "C:\ProgramData\ConfigurationBlender\" -Recurse -Force
 
-# 2. Run detection
-.\Engine\Detect.ps1
+# 2. Run detection (as Admin)
+.\ProactiveRemediation\Detect.ps1
 
-# 3. Run remediation (if needed)
-.\Engine\Remediate.ps1
+# 3. Run remediation if needed
+.\ProactiveRemediation\Remediate.ps1
 
 # 4. Check logs
-Get-ChildItem "C:\ProgramData\ConfigurationBlender\Logs" | Sort-Object LastWriteTime -Descending | Select-Object -First 5
+Get-ChildItem "C:\ProgramData\ConfigurationBlender\Logs" |
+    Sort-Object LastWriteTime -Descending |
+    Select-Object -First 5
 ```
 
 ### Testing as SYSTEM
@@ -811,10 +1000,27 @@ Some checks (e.g., `AssignedAccess`) require SYSTEM privileges:
 # Download PsExec from https://docs.microsoft.com/en-us/sysinternals/downloads/psexec
 
 # Run detection as SYSTEM
-psexec -i -s powershell.exe -ExecutionPolicy Bypass -File "C:\ProgramData\ConfigurationBlender\Engine\Detect.ps1"
+psexec -i -s powershell.exe -ExecutionPolicy Bypass -File "C:\Path\To\Detect.ps1"
 
 # Run remediation as SYSTEM
-psexec -i -s powershell.exe -ExecutionPolicy Bypass -File "C:\ProgramData\ConfigurationBlender\Engine\Remediate.ps1"
+psexec -i -s powershell.exe -ExecutionPolicy Bypass -File "C:\Path\To\Remediate.ps1"
+```
+
+### Log Analysis
+
+```powershell
+# Get latest detection log
+$log = Get-Content (
+    Get-ChildItem "C:\ProgramData\ConfigurationBlender\Logs\Detection_*.json" |
+    Sort-Object LastWriteTime -Descending |
+    Select-Object -First 1
+).FullName | ConvertFrom-Json
+
+# Show failed checks
+$log.Checks | Where-Object { -not $_.Passed } | Format-Table Name, Type, Issue
+
+# Show compliance status
+Write-Host "Compliant: $($log.Compliant)" -ForegroundColor $(if ($log.Compliant) { 'Green' } else { 'Red' })
 ```
 
 ---
@@ -822,14 +1028,6 @@ psexec -i -s powershell.exe -ExecutionPolicy Bypass -File "C:\ProgramData\Config
 ## Extending Configuration Blender
 
 ### Adding New Check Types
-
-```mermaid
-flowchart LR
-    A[Add UI Form] --> B[Add Test Function]
-    B --> C[Add Repair Function]
-    C --> D[Update Switch Statements]
-    D --> E[Test]
-```
 
 **Step 1: Add UI Form** (`Builder/js/checkTypes.js`)
 
@@ -843,45 +1041,59 @@ case 'MyNewCheck':
     `;
 ```
 
-**Step 2: Add Detection Function** (`Engine/Detect.ps1`)
+**Step 2: Add Detection Function** (`ProactiveRemediation/Detect.ps1`)
 
 ```powershell
 function Test-MyNewCheck {
     param($Properties)
 
-    # Return $true if compliant, $false if not
-    # Set $script:currentIssue for failure message
-
-    if ($condition) {
-        return $true
+    # Check condition
+    if ($conditionMet) {
+        return @{
+            Passed = $true
+            Issue = $null
+        }
     } else {
-        $script:currentIssue = "Description of issue"
-        return $false
+        return @{
+            Passed = $false
+            Issue = "Description of what failed"
+        }
     }
 }
 ```
 
-**Step 3: Add Remediation Function** (`Engine/Remediate.ps1`)
+**Step 3: Add Remediation Function** (`ProactiveRemediation/Remediate.ps1`)
 
 ```powershell
 function Repair-MyNewCheck {
-    param($Properties, $AssetBasePath)
-
-    # Fix the issue
-    # Return $true on success, $false on failure
+    param($Properties, $CheckName)
 
     try {
-        # Remediation logic
-        return $true
+        # Fix the issue
+        return @{
+            Success = $true
+            Action = "Description of what was done"
+        }
     } catch {
-        return $false
+        return @{
+            Success = $false
+            Action = "Failed: $($_.Exception.Message)"
+        }
     }
 }
 ```
 
-**Step 4: Update Switch Statements**
+**Step 4: Add to Switch Statements**
 
-Add `'MyNewCheck'` case to the switch statements in both `Detect.ps1` and `Remediate.ps1`.
+In both `Detect.ps1` and `Remediate.ps1`, add the new case:
+
+```powershell
+# In Detect.ps1
+"MyNewCheck" { Test-MyNewCheck -Properties $check.properties }
+
+# In Remediate.ps1
+"MyNewCheck" { Repair-MyNewCheck -Properties $check.properties -CheckName $check.name }
+```
 
 ---
 
@@ -891,27 +1103,62 @@ Add `'MyNewCheck'` case to the switch statements in both `Detect.ps1` and `Remed
 
 | Issue | Cause | Solution |
 |-------|-------|----------|
-| "Configuration file not found" | Wrong filename | Must be exactly `Config.json` |
-| Registry changes not applying | Using `HKCU:\` | Use `HKLM:\` for system-wide |
+| "Configuration file not found" | Wrong path or filename | Must be exactly `C:\ProgramData\ConfigurationBlender\Config.json` |
+| Registry changes not applying | Using `HKCU:\` | Use `HKLM:\` for system-wide settings |
 | AssignedAccess check skipped | Not running as SYSTEM | Test with PsExec or deploy via Intune |
-| Printer not installing | Driver not present | Add `DriverInstalled` check before `PrinterInstalled` |
-| Shortcut icon missing | Icon not deployed | Add `FilesExist` check for icon before shortcut |
+| Printer driver not found after install | Driver name mismatch | Check "Available drivers" in error message |
+| Printer not installing | Driver not registered | Add `DriverInstalled` check before `PrinterInstalled` |
+| Shortcut icon missing | Icon not deployed | Add `FilesExist` check for icon before shortcut check |
+| NetworkAdapter check not applying | Device has 1 NIC | IP range mode requires 2+ wired adapters |
 
-### Log Analysis
+### Log File Structure
 
-```powershell
-# Get latest detection log
-$log = Get-Content (Get-ChildItem "C:\ProgramData\ConfigurationBlender\Logs\Detection_*.json" |
-    Sort-Object LastWriteTime -Descending |
-    Select-Object -First 1).FullName | ConvertFrom-Json
+**Detection Log:**
+```json
+{
+  "Timestamp": "2025-12-04T14:30:00",
+  "EngineVersion": "1.0.0",
+  "ConfigVersion": "1.0.0",
+  "Role": "US_CBL",
+  "Compliant": false,
+  "Checks": [
+    {
+      "Id": "1",
+      "Name": "Check Name",
+      "Type": "CheckType",
+      "Passed": true,
+      "Issue": null
+    }
+  ],
+  "Issues": [
+    "Failed Check Name: Error description"
+  ]
+}
+```
 
-# Show failed checks
-$log.Checks | Where-Object { -not $_.Passed } | Format-Table Name, Type, Issue
-
-# Show compliance status
-Write-Host "Compliant: $($log.Compliant)" -ForegroundColor $(if ($log.Compliant) { 'Green' } else { 'Red' })
+**Remediation Log:**
+```json
+{
+  "Timestamp": "2025-12-04T14:30:05",
+  "EngineVersion": "1.0.0",
+  "ConfigVersion": "1.0.0",
+  "Role": "US_CBL",
+  "Actions": [
+    {
+      "CheckId": "1",
+      "CheckName": "Check Name",
+      "Action": "What was done",
+      "Success": true
+    }
+  ],
+  "Summary": {
+    "Successful": 5,
+    "Failed": 0,
+    "Skipped": 2
+  }
+}
 ```
 
 ---
 
-*Documentation generated for Configuration Blender. For executive overview, see [README.md](README.md).*
+*Documentation for Configuration Blender v1.0.0. For executive overview, see [README.md](README.md).*
