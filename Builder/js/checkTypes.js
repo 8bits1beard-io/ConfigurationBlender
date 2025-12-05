@@ -211,11 +211,13 @@ function getPropertiesFormForType(type) {
             return `
                 <fieldset class="property-group">
                     <legend>Allow List Properties</legend>
-                    ${formGroup('prop_path', 'Start Menu Path',
-                        `<input type="text" id="prop_path" value="C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs" translate="no">`,
-                        '', true, true)}
+                    ${formGroup('prop_paths', 'Paths to Check (one per line)',
+                        `<textarea id="prop_paths" rows="3" placeholder="C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs" translate="no"></textarea>`,
+                        'Folders where only allowed shortcuts should exist', true, true)}
+                    ${checkboxGroup('prop_includeAllDesktops', 'Include All Desktops (Public + All User Profiles)')}
                     ${formGroup('prop_allowedShortcuts', 'Allowed Shortcuts (one per line)',
-                        `<textarea id="prop_allowedShortcuts" rows="6" placeholder="GTA Time Clock.lnk"></textarea>`)}
+                        `<textarea id="prop_allowedShortcuts" rows="6" placeholder="GTA Time Clock.lnk"></textarea>`,
+                        'Only these .lnk files will be kept; all others will be removed')}
                 </fieldset>
             `;
         case 'FolderExists':
@@ -256,7 +258,8 @@ function getPropertiesFormForType(type) {
                         'Relative to Assets folder (do not include "Assets\\")', false, true)}
                 </fieldset>
             `;
-        case 'ShortcutExists':
+        case 'ShortcutProperties':
+        case 'ShortcutExists': // backward compatibility
             return `
                 <fieldset class="property-group">
                     <legend>Shortcut Properties</legend>
@@ -730,7 +733,8 @@ function getCheckProperties() {
             properties.includeAllUserProfiles = document.getElementById('prop_includeAllUserProfiles').checked;
             break;
         case 'ShortcutsAllowList':
-            properties.path = document.getElementById('prop_path').value;
+            properties.paths = document.getElementById('prop_paths').value.split('\n').filter(p => p.trim());
+            properties.includeAllDesktops = document.getElementById('prop_includeAllDesktops').checked;
             properties.allowedShortcuts = document.getElementById('prop_allowedShortcuts').value.split('\n').filter(p => p.trim());
             break;
         case 'FolderExists':
@@ -747,7 +751,8 @@ function getCheckProperties() {
                 properties.files = document.getElementById('prop_files').value.split('\n').filter(p => p.trim());
             }
             break;
-        case 'ShortcutExists':
+        case 'ShortcutProperties':
+        case 'ShortcutExists': // backward compatibility
             properties.path = document.getElementById('prop_path').value;
             properties.targetPath = document.getElementById('prop_targetPath').value;
             properties.arguments = document.getElementById('prop_arguments').value;

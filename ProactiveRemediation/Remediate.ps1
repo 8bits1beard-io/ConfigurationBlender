@@ -166,29 +166,73 @@ function Repair-FolderEmpty {
 function Repair-ShortcutsAllowList {
     param($Properties, $CheckName)
 
-    if (-not (Test-Path $Properties.path)) {
-        return @{
-            Success = $true
-            Action = "Path does not exist, nothing to clean"
+    # Build list of paths to check
+    $pathsToCheck = @()
+
+    # Support both old single 'path' and new 'paths' array for backward compatibility
+    if ($Properties.paths) {
+        $pathsToCheck += $Properties.paths
+    } elseif ($Properties.path) {
+        $pathsToCheck += $Properties.path
+    }
+
+    # Add desktop paths if includeAllDesktops is true
+    if ($Properties.includeAllDesktops) {
+        # Public Desktop
+        $pathsToCheck += "C:\Users\Public\Desktop"
+
+        # All user profile desktops
+        $userProfiles = Get-ChildItem "C:\Users" -Directory | Where-Object {
+            $_.Name -notin @('Public', 'Default', 'Default User', 'All Users') -and
+            -not $_.Name.StartsWith('.')
+        }
+        foreach ($profile in $userProfiles) {
+            $desktopPath = Join-Path $profile.FullName "Desktop"
+            if (Test-Path $desktopPath) {
+                $pathsToCheck += $desktopPath
+            }
         }
     }
 
-    $allShortcuts = Get-ChildItem -Path $Properties.path -Filter "*.lnk" -ErrorAction SilentlyContinue
-    $unwanted = $allShortcuts | Where-Object { $Properties.allowedShortcuts -notcontains $_.Name }
+    if ($pathsToCheck.Count -eq 0) {
+        return @{
+            Success = $true
+            Action = "No paths specified, nothing to clean"
+        }
+    }
 
     $removedCount = 0
-    foreach ($shortcut in $unwanted) {
-        try {
-            Remove-Item -Path $shortcut.FullName -Force -ErrorAction Stop
-            $removedCount++
-        } catch {
-            # Continue on individual failures
+    $removedDetails = @()
+
+    foreach ($checkPath in $pathsToCheck) {
+        if (-not (Test-Path $checkPath)) {
+            continue
+        }
+
+        $allShortcuts = Get-ChildItem -Path $checkPath -Filter "*.lnk" -ErrorAction SilentlyContinue
+        $unwanted = $allShortcuts | Where-Object { $Properties.allowedShortcuts -notcontains $_.Name }
+
+        foreach ($shortcut in $unwanted) {
+            try {
+                Remove-Item -Path $shortcut.FullName -Force -ErrorAction Stop
+                $removedCount++
+                $removedDetails += "$($shortcut.Name)"
+            } catch {
+                # Continue on individual failures
+            }
+        }
+    }
+
+    if ($removedCount -eq 0) {
+        return @{
+            Success = $true
+            Action = "No unwanted shortcuts found"
         }
     }
 
     return @{
         Success = $true
-        Action = "Removed $removedCount unwanted shortcut(s)"
+        Action = "Removed $removedCount unwanted shortcut(s): $($removedDetails -join ', ')"
     }
 }
 
@@ -308,7 +352,7 @@ function Repair-FilesExist {
     }
 }
 
-function Repair-ShortcutExists {
+function Repair-ShortcutProperties {
     param($Properties, $CheckName)
 
     try {
@@ -1691,7 +1735,8 @@ foreach ($check in $Config.checks) {
             # FolderHasFiles renamed to FolderExists - backward compatibility
             "FolderHasFiles" { Repair-FolderExists -Properties $check.properties -CheckName $check.name }
             "FilesExist" { Repair-FilesExist -Properties $check.properties -CheckName $check.name }
-            "ShortcutExists" { Repair-ShortcutExists -Properties $check.properties -CheckName $check.name }
+            "ShortcutProperties" { Repair-ShortcutProperties -Properties $check.properties -CheckName $check.name }
+            "ShortcutExists" { Repair-ShortcutProperties -Properties $check.properties -CheckName $check.name } # backward compatibility
             "AssignedAccess" { Repair-AssignedAccess -Properties $check.properties -CheckName $check.name }
             "RegistryValue" { Repair-RegistryValue -Properties $check.properties -CheckName $check.name }
             "ScheduledTaskExists" { Repair-ScheduledTaskExists -Properties $check.properties -CheckName $check.name }

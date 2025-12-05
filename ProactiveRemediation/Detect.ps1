@@ -139,17 +139,57 @@ function Test-FolderEmpty {
 function Test-ShortcutsAllowList {
     param($Properties)
 
-    if (-not (Test-Path $Properties.path)) {
+    # Build list of paths to check
+    $pathsToCheck = @()
+
+    # Support both old single 'path' and new 'paths' array for backward compatibility
+    if ($Properties.paths) {
+        $pathsToCheck += $Properties.paths
+    } elseif ($Properties.path) {
+        $pathsToCheck += $Properties.path
+    }
+
+    # Add desktop paths if includeAllDesktops is true
+    if ($Properties.includeAllDesktops) {
+        # Public Desktop
+        $pathsToCheck += "C:\Users\Public\Desktop"
+
+        # All user profile desktops
+        $userProfiles = Get-ChildItem "C:\Users" -Directory | Where-Object {
+            $_.Name -notin @('Public', 'Default', 'Default User', 'All Users') -and
+            -not $_.Name.StartsWith('.')
+        }
+        foreach ($profile in $userProfiles) {
+            $desktopPath = Join-Path $profile.FullName "Desktop"
+            if (Test-Path $desktopPath) {
+                $pathsToCheck += $desktopPath
+            }
+        }
+    }
+
+    if ($pathsToCheck.Count -eq 0) {
         return @{ Passed = $true; Issue = $null }
     }
 
-    $allShortcuts = Get-ChildItem -Path $Properties.path -Filter "*.lnk" -ErrorAction SilentlyContinue
-    $unwanted = $allShortcuts | Where-Object { $Properties.allowedShortcuts -notcontains $_.Name }
+    $allUnwanted = @()
 
-    if ($unwanted.Count -gt 0) {
+    foreach ($checkPath in $pathsToCheck) {
+        if (-not (Test-Path $checkPath)) {
+            continue
+        }
+
+        $allShortcuts = Get-ChildItem -Path $checkPath -Filter "*.lnk" -ErrorAction SilentlyContinue
+        $unwanted = $allShortcuts | Where-Object { $Properties.allowedShortcuts -notcontains $_.Name }
+
+        foreach ($item in $unwanted) {
+            $allUnwanted += "$($item.Name) (in $checkPath)"
+        }
+    }
+
+    if ($allUnwanted.Count -gt 0) {
         return @{
             Passed = $false
-            Issue = "Found $($unwanted.Count) unwanted shortcut(s): $($unwanted.Name -join ', ')"
+            Issue = "Found $($allUnwanted.Count) unwanted shortcut(s): $($allUnwanted -join ', ')"
         }
     }
 
@@ -222,7 +262,7 @@ function Test-FilesExist {
     return @{ Passed = $true; Issue = $null }
 }
 
-function Test-ShortcutExists {
+function Test-ShortcutProperties {
     param($Properties)
 
     if (-not (Test-Path $Properties.path)) {
@@ -1341,7 +1381,8 @@ foreach ($check in $Config.checks) {
             # FolderHasFiles renamed to FolderExists - backward compatibility
             "FolderHasFiles" { Test-FolderExists -Properties $check.properties }
             "FilesExist" { Test-FilesExist -Properties $check.properties }
-            "ShortcutExists" { Test-ShortcutExists -Properties $check.properties }
+            "ShortcutProperties" { Test-ShortcutProperties -Properties $check.properties }
+            "ShortcutExists" { Test-ShortcutProperties -Properties $check.properties } # backward compatibility
             "AssignedAccess" { Test-AssignedAccess -Properties $check.properties }
             "RegistryValue" { Test-RegistryValue -Properties $check.properties }
             "ScheduledTaskExists" { Test-ScheduledTaskExists -Properties $check.properties }

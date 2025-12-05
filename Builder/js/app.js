@@ -158,50 +158,92 @@ function renderChecksList(filterText = '') {
         if (filteredChecks.length === 0) {
             list.innerHTML = `<div class="editor-placeholder" role="status">No checks match your search.</div>`;
         } else {
-            list.innerHTML = filteredChecks.map(({ check, index }) => `
-                <div class="check-item ${!check.enabled ? 'disabled' : ''}"
-                     role="option"
-                     tabindex="0"
-                     draggable="true"
-                     data-index="${index}"
-                     aria-selected="false"
-                     aria-label="${escapeHtml(check.name)}, ${check.type}, ${check.enabled ? 'enabled' : 'disabled'}"
-                     ondragstart="handleDragStart(event, ${index})"
-                     ondragover="handleDragOver(event)"
-                     ondragenter="handleDragEnter(event)"
-                     ondragleave="handleDragLeave(event)"
-                     ondrop="handleDrop(event, ${index})"
-                     ondragend="handleDragEnd(event)"
-                     onclick="selectCheck(${index})"
-                     ondblclick="editCheck(${index})"
-                     onkeydown="handleCheckItemKeydown(event, ${index})">
-                    <div class="check-reorder-buttons">
+            // Group checks by category
+            const groupedChecks = {};
+            filteredChecks.forEach(({ check, index }) => {
+                const category = getCheckTypeCategory(check.type);
+                if (!groupedChecks[category]) {
+                    groupedChecks[category] = [];
+                }
+                groupedChecks[category].push({ check, index });
+            });
+
+            // Sort categories alphabetically by display name
+            const sortedCategories = Object.keys(groupedChecks).sort((a, b) => {
+                const nameA = categoryInfo[a]?.name || a;
+                const nameB = categoryInfo[b]?.name || b;
+                return nameA.localeCompare(nameB);
+            });
+
+            // Render grouped checks
+            list.innerHTML = sortedCategories.map(category => {
+                const categoryChecks = groupedChecks[category];
+                const isCollapsed = !expandedCategories.has(category);
+                const categoryName = categoryInfo[category]?.name || category;
+
+                return `
+                    <div class="check-category" data-category="${category}">
                         <button type="button"
-                                class="btn-reorder"
-                                onclick="event.stopPropagation(); moveCheck(${index}, -1)"
-                                title="Move up"
-                                aria-label="Move ${escapeHtml(check.name)} up"
-                                ${index === 0 ? 'disabled' : ''}>&#9650;</button>
-                        <button type="button"
-                                class="btn-reorder"
-                                onclick="event.stopPropagation(); moveCheck(${index}, 1)"
-                                title="Move down"
-                                aria-label="Move ${escapeHtml(check.name)} down"
-                                ${index === checks.length - 1 ? 'disabled' : ''}>&#9660;</button>
+                                class="check-category-header ${isCollapsed ? 'collapsed' : ''}"
+                                onclick="toggleCategory('${category}')"
+                                aria-expanded="${!isCollapsed}"
+                                aria-controls="category-${category}">
+                            <span class="category-toggle">${isCollapsed ? '▶' : '▼'}</span>
+                            <span class="category-name">${categoryName}</span>
+                            <span class="category-count">(${categoryChecks.length})</span>
+                        </button>
+                        <div class="check-category-items ${isCollapsed ? 'collapsed' : ''}"
+                             id="category-${category}"
+                             role="group"
+                             aria-label="${categoryName} checks">
+                            ${categoryChecks.map(({ check, index }) => `
+                                <div class="check-item ${!check.enabled ? 'disabled' : ''}"
+                                     role="option"
+                                     tabindex="0"
+                                     draggable="true"
+                                     data-index="${index}"
+                                     aria-selected="false"
+                                     aria-label="${escapeHtml(check.name)}, ${check.type}, ${check.enabled ? 'enabled' : 'disabled'}"
+                                     ondragstart="handleDragStart(event, ${index})"
+                                     ondragover="handleDragOver(event)"
+                                     ondragenter="handleDragEnter(event)"
+                                     ondragleave="handleDragLeave(event)"
+                                     ondrop="handleDrop(event, ${index})"
+                                     ondragend="handleDragEnd(event)"
+                                     onclick="selectCheck(${index})"
+                                     ondblclick="editCheck(${index})"
+                                     onkeydown="handleCheckItemKeydown(event, ${index})">
+                                    <div class="check-reorder-buttons">
+                                        <button type="button"
+                                                class="btn-reorder"
+                                                onclick="event.stopPropagation(); moveCheck(${index}, -1)"
+                                                title="Move up"
+                                                aria-label="Move ${escapeHtml(check.name)} up"
+                                                ${index === 0 ? 'disabled' : ''}>&#9650;</button>
+                                        <button type="button"
+                                                class="btn-reorder"
+                                                onclick="event.stopPropagation(); moveCheck(${index}, 1)"
+                                                title="Move down"
+                                                aria-label="Move ${escapeHtml(check.name)} down"
+                                                ${index === checks.length - 1 ? 'disabled' : ''}>&#9660;</button>
+                                    </div>
+                                    <span class="check-order" aria-hidden="true">${index + 1}</span>
+                                    <div class="check-info">
+                                        <div class="check-name">${escapeHtml(check.name)}</div>
+                                        <span class="check-type ${getCheckTypeCategory(check.type)}" translate="no">${escapeHtml(check.type)}</span>
+                                        ${!check.enabled ? '<span class="check-type disabled-badge">Off</span>' : ''}
+                                    </div>
+                                    <button type="button"
+                                            class="btn btn-danger btn-sm"
+                                            onclick="event.stopPropagation(); deleteCheck(${index})"
+                                            title="Delete"
+                                            aria-label="Delete ${escapeHtml(check.name)}">&#215;</button>
+                                </div>
+                            `).join('')}
+                        </div>
                     </div>
-                    <span class="check-order" aria-hidden="true">${index + 1}</span>
-                    <div class="check-info">
-                        <div class="check-name">${escapeHtml(check.name)}</div>
-                        <span class="check-type ${getCheckTypeCategory(check.type)}" translate="no">${escapeHtml(check.type)}</span>
-                        ${!check.enabled ? '<span class="check-type disabled-badge">Off</span>' : ''}
-                    </div>
-                    <button type="button"
-                            class="btn btn-danger btn-sm"
-                            onclick="event.stopPropagation(); deleteCheck(${index})"
-                            title="Delete"
-                            aria-label="Delete ${escapeHtml(check.name)}">&#215;</button>
-                </div>
-            `).join('');
+                `;
+            }).join('');
         }
     }
     updatePreview();
@@ -211,6 +253,18 @@ function renderChecksList(filterText = '') {
     if (checks.length > 0) {
         showValidationResults();
     }
+}
+
+/**
+ * Toggle category collapse state
+ */
+function toggleCategory(category) {
+    if (expandedCategories.has(category)) {
+        expandedCategories.delete(category);
+    } else {
+        expandedCategories.add(category);
+    }
+    renderChecksList(document.getElementById('checkSearch')?.value || '');
 }
 
 /**
@@ -268,21 +322,38 @@ function getCheckTypeCategory(type) {
         'FolderEmpty': 'cat-files',
         'FolderExists': 'cat-files',
         'FilesExist': 'cat-files',
-        'ShortcutExists': 'cat-shortcuts',
+        'ShortcutProperties': 'cat-shortcuts',
+        'ShortcutExists': 'cat-shortcuts', // backward compatibility
         'ShortcutsAllowList': 'cat-shortcuts',
         'RegistryValue': 'cat-registry',
         'ScheduledTaskExists': 'cat-system',
         'ServiceRunning': 'cat-system',
         'WindowsFeature': 'cat-system',
         'AssignedAccess': 'cat-system',
-        'DriverInstalled': 'cat-system',
-        'PrinterInstalled': 'cat-network',
-        'NetworkAdapterConfiguration': 'cat-network',
+        'DriverInstalled': 'cat-hardware',
+        'PrinterInstalled': 'cat-hardware',
+        'NetworkAdapterConfiguration': 'cat-hardware',
         'FirewallRule': 'cat-security',
-        'CertificateInstalled': 'cat-security'
+        'CertificateInstalled': 'cat-security',
+        'EdgeFavorites': 'cat-browser'
     };
     return categoryMap[type] || 'cat-system';
 }
+
+// Category display names and order
+const categoryInfo = {
+    'cat-applications': { name: 'Applications', order: 1 },
+    'cat-files': { name: 'Files & Folders', order: 2 },
+    'cat-shortcuts': { name: 'Shortcuts', order: 3 },
+    'cat-registry': { name: 'Registry', order: 4 },
+    'cat-hardware': { name: 'Hardware & Drivers', order: 5 },
+    'cat-system': { name: 'System & Services', order: 6 },
+    'cat-security': { name: 'Security', order: 7 },
+    'cat-browser': { name: 'Browser', order: 8 }
+};
+
+// Track expanded state of categories (collapsed by default)
+const expandedCategories = new Set();
 
 /**
  * Find a duplicate check based on type and key properties
