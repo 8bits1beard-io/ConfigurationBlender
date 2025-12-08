@@ -704,7 +704,7 @@ function Test-DriverInstalled {
 
         # For non-printer drivers, search driver store by name
         $driver = Get-WindowsDriver -Online | Where-Object {
-            $_.OriginalFileName -like "*$($Properties.driverName)*" -or $_.Driver -like "*$($Properties.driverName)*"
+            $_.OriginalFileName -eq $Properties.driverName -or $_.Driver -eq $Properties.driverName
         } | Select-Object -First 1
 
         if ($null -eq $driver) {
@@ -1215,7 +1215,7 @@ function Test-EdgeFavorites {
 
     try {
         # Parse source HTML to get expected favorites
-        $sourceHtmlPath = Join-Path $AssetsPath $Properties.sourceAssetPath
+        $sourceHtmlPath = Join-Path $AssetBasePath $Properties.sourceAssetPath
         if (-not (Test-Path $sourceHtmlPath)) {
             return @{
                 Passed = $false

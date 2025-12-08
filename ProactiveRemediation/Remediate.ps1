@@ -70,12 +70,8 @@ function Repair-Application {
         }
 
         try {
-            # Parse the command - first part is executable, rest is arguments
-            $cmdParts = $Properties.installCommand -split ' ', 2
-            $executable = $cmdParts[0]
-            $arguments = if ($cmdParts.Length -gt 1) { $cmdParts[1] } else { "" }
-
-            $process = Start-Process -FilePath $executable -ArgumentList $arguments -Wait -PassThru
+            # Use cmd.exe to execute the install command - handles paths with spaces without requiring user to quote them
+            $process = Start-Process -FilePath "cmd.exe" -ArgumentList "/c `"$($Properties.installCommand)`"" -Wait -PassThru
             if ($process.ExitCode -eq 0) {
                 return @{
                     Success = $true
@@ -479,6 +475,15 @@ function Repair-RegistryValue {
     param($Properties, $CheckName)
 
     try {
+        # Validate registry type
+        $validTypes = @("String", "ExpandString", "Binary", "DWord", "MultiString", "QWord")
+        if ($Properties.type -and $Properties.type -notin $validTypes) {
+            return @{
+                Success = $false
+                Action = "Invalid registry type '$($Properties.type)'. Valid types: $($validTypes -join ', ')"
+            }
+        }
+
         # Ensure registry path exists
         if (-not (Test-Path $Properties.path)) {
             New-Item -Path $Properties.path -Force | Out-Null
@@ -642,6 +647,45 @@ function Repair-PrinterInstalled {
 
         # Remove and recreate printer if configuration is wrong
         if ($needsRecreation) {
+            # Validate all prerequisites BEFORE removing anything
+            # If we can't recreate the printer correctly, stop and require manual intervention
+
+            # Check driver exists
+            $driver = Get-PrinterDriver -Name $Properties.driverName -ErrorAction SilentlyContinue
+            if ($null -eq $driver) {
+                return @{
+                    Success = $false
+                    Action = "Cannot recreate printer: driver '$($Properties.driverName)' not installed. Manual intervention required."
+                }
+            }
+
+            # Check we have IP/hostname for port creation
+            if (-not $Properties.printerIP) {
+                return @{
+                    Success = $false
+                    Action = "Cannot recreate printer: printerIP property is missing. Manual intervention required."
+                }
+            }
+
+            # Validate port type
+            $portType = if ($Properties.portType) { $Properties.portType } else { "TCP" }
+            if ($portType -notin @("TCP", "LPR")) {
+                return @{
+                    Success = $false
+                    Action = "Cannot recreate printer: unsupported port type '$portType'. Manual intervention required."
+                }
+            }
+
+            # If LPR, verify we have queue name
+            if ($portType -eq "LPR" -and -not $Properties.lprQueue) {
+                return @{
+                    Success = $false
+                    Action = "Cannot recreate printer: LPR port type requires lprQueue property. Manual intervention required."
+                }
+            }
+
+            # All prerequisites validated - proceed with removal and recreation
+
             # Stop Print Spooler service to clear any stuck jobs
             $spoolerWasStopped = $false
             try {
@@ -874,14 +918,34 @@ function Repair-DriverInstalled {
             if (-not $printerDriver) {
                 $needsInstall = $true
             } elseif ($Properties.minimumVersion) {
-                # Printer drivers don't expose version easily, but we can check MajorVersion/MinorVersion
-                # For now, assume if driver exists it meets requirements unless we can parse version
-                $existingVersion = "installed"
+                # Decode DriverVersion (encoded as 64-bit integer) to version string
+                try {
+                    $ver = $printerDriver.DriverVersion
+                    $versionString = (3..0 | ForEach-Object { ($ver -shr ($_ * 16)) -band 0xffff }) -join '.'
+                    $installedVersion = [version]$versionString
+                    $requiredVersion = [version]$Properties.minimumVersion
+                    $existingVersion = $versionString
+
+                    if ($installedVersion -lt $requiredVersion) {
+                        $needsUpdate = $true
+                    }
+                } catch {
+                    # If version parsing fails, assume update is needed
+                    $needsUpdate = $true
+                }
+            } else {
+                # No minimum version specified, just record installed version
+                try {
+                    $ver = $printerDriver.DriverVersion
+                    $existingVersion = (3..0 | ForEach-Object { ($ver -shr ($_ * 16)) -band 0xffff }) -join '.'
+                } catch {
+                    $existingVersion = "installed"
+                }
             }
         } else {
             # For other drivers, check Windows driver store
             $existingDriver = Get-WindowsDriver -Online -ErrorAction SilentlyContinue | Where-Object {
-                $_.OriginalFileName -like "*$($Properties.driverName)*" -or $_.Driver -like "*$($Properties.driverName)*"
+                $_.OriginalFileName -eq $Properties.driverName -or $_.Driver -eq $Properties.driverName
             } | Select-Object -First 1
 
             if (-not $existingDriver) {
@@ -914,7 +978,7 @@ function Repair-DriverInstalled {
         # Remove old driver if update is needed (non-printer drivers only)
         if ($needsUpdate -and $Properties.driverClass -ne "Printer") {
             $existingDriver = Get-WindowsDriver -Online -ErrorAction SilentlyContinue | Where-Object {
-                $_.OriginalFileName -like "*$($Properties.driverName)*" -or $_.Driver -like "*$($Properties.driverName)*"
+                $_.OriginalFileName -eq $Properties.driverName -or $_.Driver -eq $Properties.driverName
             } | Select-Object -First 1
 
             if ($existingDriver) {
@@ -976,7 +1040,7 @@ function Repair-DriverInstalled {
 
         # For non-printer drivers, verify in driver store using Get-WindowsDriver
         $installedDriver = Get-WindowsDriver -Online -ErrorAction SilentlyContinue | Where-Object {
-            $_.OriginalFileName -like "*$($Properties.driverName)*" -or $_.Driver -like "*$($Properties.driverName)*"
+            $_.OriginalFileName -eq $Properties.driverName -or $_.Driver -eq $Properties.driverName
         } | Select-Object -First 1
 
         if ($installedDriver) {
@@ -1555,7 +1619,7 @@ function Repair-EdgeFavorites {
 
     try {
         # Parse source HTML to get expected favorites
-        $sourceHtmlPath = Join-Path $AssetsPath $Properties.sourceAssetPath
+        $sourceHtmlPath = Join-Path $AssetBasePath $Properties.sourceAssetPath
         if (-not (Test-Path $sourceHtmlPath)) {
             return @{
                 Success = $false

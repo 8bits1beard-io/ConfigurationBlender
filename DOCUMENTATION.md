@@ -376,9 +376,11 @@ Installs device drivers. Special handling for printer drivers.
 3. FAIL if driver not registered or version too old
 
 **Detection (Other drivers):**
-1. `Get-WindowsDriver -Online` - search driver store
+1. `Get-WindowsDriver -Online` - search driver store by exact name match
 2. Compare version if `minimumVersion` specified
 3. FAIL if driver not found
+
+**Important:** For non-printer drivers, the `driverName` must exactly match either the `OriginalFileName` or `Driver` property returned by `Get-WindowsDriver`. Partial or wildcard matching is not supported.
 
 **Remediation (Printer drivers):**
 1. Check if already installed via `Get-PrinterDriver` - skip if exists
@@ -425,8 +427,13 @@ Configures network printers. Requires corresponding DriverInstalled check.
 5. FAIL if printer missing or any config mismatch
 
 **Remediation:**
-1. Verify driver exists via `Get-PrinterDriver` - fail if missing
-2. If printer exists but misconfigured:
+1. If printer exists but misconfigured, validate all prerequisites before removal:
+   - Driver exists via `Get-PrinterDriver`
+   - `printerIP` property is present
+   - `portType` is valid (TCP or LPR)
+   - `lprQueue` is present if port type is LPR
+   - If any prerequisite fails, return error requiring manual intervention
+2. If prerequisites pass and printer is misconfigured:
    - Stop spooler service
    - Clear stuck print jobs from spool directory
    - Restart spooler
@@ -435,7 +442,7 @@ Configures network printers. Requires corresponding DriverInstalled check.
 4. `Add-Printer` - create printer with driver and port
 5. Set as default if `setAsDefault: true`
 
-**Important:** DriverInstalled check must come before PrinterInstalled in Config.json.
+**Important:** DriverInstalled check must come before PrinterInstalled in Config.json. If a misconfigured printer cannot be recreated due to missing prerequisites, the existing printer is left in place and manual intervention is required.
 
 ---
 
