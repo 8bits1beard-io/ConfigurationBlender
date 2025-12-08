@@ -54,6 +54,8 @@ psexec -i -s powershell.exe -ExecutionPolicy Bypass -File "C:\Path\To\Detect.ps1
 Each Test function returns `@{ Passed = $bool; Issue = $string }`.
 Each Repair function returns `@{ Success = $bool; Action = $string }`.
 
+**Repair functions must be idempotent:** Each Repair function checks current state before making changes. If already in desired state, return success without modifying anything. This ensures remediation can run repeatedly without unnecessary operations.
+
 ## Important Patterns
 
 **Printer driver flow:** `pnputil /add-driver` → `Add-PrinterDriver` → `Get-PrinterDriver` (verification source of truth)
