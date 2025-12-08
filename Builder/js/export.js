@@ -217,6 +217,7 @@ const checkTypeIcons = {
     'FilesExist': '📄',
     'ShortcutsAllowList': '🔗',
     'ShortcutExists': '🔗',
+    'ShortcutProperties': '🔗',
     'AssignedAccess': '🖥️',
     'RegistryValue': '🗝️',
     'ScheduledTaskExists': '⏰',
@@ -226,7 +227,8 @@ const checkTypeIcons = {
     'WindowsFeature': '⚙️',
     'FirewallRule': '🛡️',
     'CertificateInstalled': '🔐',
-    'NetworkAdapterConfiguration': '🌐'
+    'NetworkAdapterConfiguration': '🌐',
+    'EdgeFavorites': '⭐'
 };
 
 // ============================================================================
@@ -367,6 +369,24 @@ function generateShortcutExistsSummary(props) {
 }
 
 function generateAssignedAccessSummary(props) {
+    // If using XML file path, show simplified summary
+    if (props.configXmlPath) {
+        let md = '```mermaid\nflowchart LR\n';
+        md += '    A[📄 XML Config] --> B[Assigned Access]\n';
+        md += '    B --> C[🖥️ Kiosk Mode]\n';
+        md += '```\n\n';
+
+        md += '**Configuration:**\n';
+        md += `| Property | Value |\n|----------|-------|\n`;
+        md += `| Config XML | \`Assets\\${props.configXmlPath}\` |\n`;
+
+        md += '\n**Remediation:**\n';
+        md += 'Applies Assigned Access XML configuration via WMI MDM_AssignedAccess class.\n';
+        md += '\n*Requires SYSTEM privileges*\n';
+        return md;
+    }
+
+    // Dynamic configuration
     let md = '```mermaid\nflowchart TD\n';
     md += '    subgraph Kiosk["🖥️ ' + (props.displayName || 'Kiosk') + '"]\n';
     md += '        subgraph Apps["Allowed Applications"]\n';
@@ -596,6 +616,54 @@ function generateCertificateInstalledSummary(props) {
     return md;
 }
 
+function generateShortcutPropertiesSummary(props) {
+    // Extract URL from arguments if Edge kiosk
+    let target = props.targetPath;
+    let url = '';
+    if (props.arguments && props.arguments.includes('--kiosk')) {
+        const match = props.arguments.match(/--kiosk\s+(https?:\/\/[^\s]+)/);
+        if (match) url = match[1];
+    }
+
+    let md = '```mermaid\nflowchart LR\n';
+    if (url) {
+        md += `    A[🔗 ${props.description || 'Shortcut'}] --> B[Edge Kiosk]\n`;
+        md += `    B --> C[${url}]\n`;
+    } else {
+        const targetExe = target ? target.split('\\').pop() : 'Target';
+        md += `    A[🔗 ${props.description || 'Shortcut'}] --> B[${targetExe}]\n`;
+    }
+    md += '```\n\n';
+
+    md += '**Shortcut Details:**\n';
+    md += `| Property | Value |\n|----------|-------|\n`;
+    md += `| Path | \`${props.path}\` |\n`;
+    md += `| Target | \`${props.targetPath}\` |\n`;
+    if (props.arguments) md += `| Arguments | \`${props.arguments}\` |\n`;
+    if (props.iconLocation) md += `| Icon | \`${props.iconLocation}\` |\n`;
+    if (props.description) md += `| Description | ${props.description} |\n`;
+
+    md += '\n**Remediation:**\n';
+    md += 'Creates or updates the shortcut with the specified properties.\n';
+    return md;
+}
+
+function generateEdgeFavoritesSummary(props) {
+    let md = '```mermaid\nflowchart LR\n';
+    md += '    A[📄 Favorites HTML] --> B[Edge Profile]\n';
+    md += '    B --> C[⭐ Favorites Bar]\n';
+    md += '```\n\n';
+
+    md += '**Edge Favorites Details:**\n';
+    md += `| Property | Value |\n|----------|-------|\n`;
+    md += `| Source File | \`Assets\\${props.sourceAssetPath}\` |\n`;
+    md += `| Target | All Edge user profiles |\n`;
+
+    md += '\n**Remediation:**\n';
+    md += 'Imports favorites from HTML file into Edge favorites bar for all user profiles.\n';
+    return md;
+}
+
 function generateNetworkAdapterSummary(props) {
     let md = '```mermaid\nflowchart TD\n';
 
@@ -723,6 +791,9 @@ function generateCheckSummary(check, index) {
         case 'ShortcutExists':
             md += generateShortcutExistsSummary(props);
             break;
+        case 'ShortcutProperties':
+            md += generateShortcutPropertiesSummary(props);
+            break;
         case 'AssignedAccess':
             md += generateAssignedAccessSummary(props);
             break;
@@ -752,6 +823,9 @@ function generateCheckSummary(check, index) {
             break;
         case 'NetworkAdapterConfiguration':
             md += generateNetworkAdapterSummary(props);
+            break;
+        case 'EdgeFavorites':
+            md += generateEdgeFavoritesSummary(props);
             break;
         default:
             md += `**Properties:**\n\`\`\`json\n${JSON.stringify(props, null, 2)}\n\`\`\`\n`;

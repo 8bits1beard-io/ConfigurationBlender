@@ -273,6 +273,14 @@ function getPropertiesFormForType(type) {
             return `
                 <fieldset class="property-group">
                     <legend>Assigned Access Properties</legend>
+                    <div class="alert alert-info" role="note">
+                        <strong>Configuration Options:</strong>
+                        <p>You can either provide a pre-built XML file OR define the kiosk settings below. If configXmlPath is provided, it takes precedence.</p>
+                    </div>
+                    ${formGroup('prop_configXmlPath', 'Config XML Path (relative to Assets)',
+                        `<input type="text" id="prop_configXmlPath" placeholder="XML/AssignedAccessConfig.xml" translate="no">`,
+                        'Pre-built Assigned Access XML file. If specified, fields below are ignored.', false, true)}
+                    <hr style="margin: 1rem 0; border: none; border-top: 1px solid var(--border-color);">
                     <div class="alert alert-warning" role="alert">
                         <strong>Required Companion Checks:</strong>
                         <p>AssignedAccess pins Edge shortcuts to the Start Menu, but they display as "Microsoft Edge" by default. To show custom names:</p>
@@ -284,7 +292,7 @@ function getPropertiesFormForType(type) {
                     </div>
                     ${formGroup('prop_profileId', 'Profile ID (GUID)',
                         `<input type="text" id="prop_profileId" placeholder="{xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx}" translate="no">`,
-                        '', true, true)}
+                        '', false, true)}
                     ${formGroup('prop_displayName', 'Display Name',
                         `<input type="text" id="prop_displayName" placeholder="Kiosk Profile">`)}
                     ${formGroup('prop_allowedApps', 'Allowed Apps (one per line)',
@@ -748,12 +756,17 @@ function getCheckProperties() {
             properties.description = document.getElementById('prop_description').value;
             break;
         case 'AssignedAccess':
-            properties.profileId = document.getElementById('prop_profileId').value;
-            properties.displayName = document.getElementById('prop_displayName').value;
-            properties.allowedApps = document.getElementById('prop_allowedApps').value.split('\n').filter(p => p.trim());
-            properties.startPins = document.getElementById('prop_startPins').value.split('\n').filter(p => p.trim());
-            properties.showTaskbar = document.getElementById('prop_showTaskbar').checked;
-            properties.allowedNamespaces = document.getElementById('prop_allowedNamespaces').value.split('\n').filter(p => p.trim());
+            const configXmlPath = document.getElementById('prop_configXmlPath').value;
+            if (configXmlPath) {
+                properties.configXmlPath = configXmlPath;
+            } else {
+                properties.profileId = document.getElementById('prop_profileId').value;
+                properties.displayName = document.getElementById('prop_displayName').value;
+                properties.allowedApps = document.getElementById('prop_allowedApps').value.split('\n').filter(p => p.trim());
+                properties.startPins = document.getElementById('prop_startPins').value.split('\n').filter(p => p.trim());
+                properties.showTaskbar = document.getElementById('prop_showTaskbar').checked;
+                properties.allowedNamespaces = document.getElementById('prop_allowedNamespaces').value.split('\n').filter(p => p.trim());
+            }
             break;
         case 'RegistryValue':
             properties.path = document.getElementById('prop_path').value;

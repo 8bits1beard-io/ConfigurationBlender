@@ -289,7 +289,7 @@ function Test-AssignedAccess {
     param($Properties)
 
     # Check if running as SYSTEM
-    $currentUser = [Security.Principal.WindowsIdentity]::GetCurrent()
+    $currentUser = [System.Security.Principal.WindowsIdentity]::GetCurrent()
     $isSystem = $currentUser.IsSystem
 
     if (-not $isSystem) {
@@ -1246,8 +1246,8 @@ function Test-EdgeFavorites {
         $expectedFavorites = @()
 
         # Parse Netscape Bookmark format - extract <A HREF="url">name</A>
-        $matches = [regex]::Matches($htmlContent, '<A\s+HREF="([^"]+)"[^>]*>([^<]+)</A>', 'IgnoreCase')
-        foreach ($match in $matches) {
+        $regexMatches = [regex]::Matches($htmlContent, '<A\s+HREF="([^"]+)"[^>]*>([^<]+)</A>', 'IgnoreCase')
+        foreach ($match in $regexMatches) {
             $expectedFavorites += @{
                 Name = $match.Groups[2].Value.Trim()
                 Url = $match.Groups[1].Value.Trim()

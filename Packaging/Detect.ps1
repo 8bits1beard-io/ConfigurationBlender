@@ -1,6 +1,7 @@
 # ============================================================================
 # Configuration Blender - Win32 App Detection Script
 # ============================================================================
+# Author: Joshua Walderbach
 # Description: Checks if the correct version of configuration is installed.
 #              Used by Intune to determine if Win32 app needs to be installed.
 # ============================================================================
