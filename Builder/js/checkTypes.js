@@ -170,22 +170,22 @@ function getPropertiesFormForType(type) {
                     <legend>Application Properties</legend>
                     ${formGroup('prop_applicationName', 'Application Name',
                         `<input type="text" id="prop_applicationName" placeholder="e.g., Google Chrome">`,
-                        '', true)}
+                        'Human-readable name for logging', true)}
                     ${formGroup('prop_ensureInstalled', 'Desired State',
                         `<select id="prop_ensureInstalled" onchange="toggleApplicationFields()">
                             <option value="false">Should NOT be installed (remove if found)</option>
                             <option value="true">Should be installed (install if missing)</option>
                         </select>`)}
-                    ${formGroup('prop_searchPaths', 'Detection Paths (one per line)',
-                        `<textarea id="prop_searchPaths" rows="3" placeholder="C:\\Program Files*\\Google\\Chrome\\Application\\chrome.exe" translate="no"></textarea>`,
-                        'Wildcard paths to detect if the application is installed', false, true)}
+                    ${formGroup('prop_displayName', 'Registry Display Name',
+                        `<input type="text" id="prop_displayName" placeholder="Google Chrome*" translate="no">`,
+                        'Match against DisplayName in Windows registry (supports wildcards *)', true, true)}
+                    ${formGroup('prop_publisher', 'Publisher (optional)',
+                        `<input type="text" id="prop_publisher" placeholder="Google LLC" translate="no">`,
+                        'Filter by Publisher field for more precise matching', false, true)}
                     <div id="uninstallFields" role="group" aria-label="Uninstall settings">
-                        ${formGroup('prop_uninstallPaths', 'Uninstall Paths (one per line)',
-                            `<textarea id="prop_uninstallPaths" rows="3" placeholder="C:\\Program Files*\\Google\\Chrome\\Application\\*\\Installer\\setup.exe" translate="no"></textarea>`,
-                            'Paths to uninstaller executables', false, true)}
-                        ${formGroup('prop_uninstallArguments', 'Uninstall Arguments',
-                            `<input type="text" id="prop_uninstallArguments" placeholder="--uninstall --force-uninstall" translate="no">`,
-                            '', false, true)}
+                        ${formGroup('prop_uninstallArguments', 'Uninstall Arguments (optional)',
+                            `<input type="text" id="prop_uninstallArguments" placeholder="/quiet /norestart" translate="no">`,
+                            'Additional arguments to append to UninstallString from registry', false, true)}
                     </div>
                     <div id="installFields" style="display: none;" aria-hidden="true" role="group" aria-label="Install settings">
                         ${formGroup('prop_installCommand', 'Install Command',
@@ -708,14 +708,16 @@ function getCheckProperties() {
         case 'Application':
             properties.applicationName = document.getElementById('prop_applicationName').value;
             properties.ensureInstalled = document.getElementById('prop_ensureInstalled').value === 'true';
-            properties.searchPaths = document.getElementById('prop_searchPaths').value.split('\n').filter(p => p.trim());
+            properties.displayName = document.getElementById('prop_displayName').value;
+            const publisher = document.getElementById('prop_publisher').value;
+            if (publisher) properties.publisher = publisher;
             if (properties.ensureInstalled) {
                 properties.installCommand = document.getElementById('prop_installCommand').value;
                 const minVer = document.getElementById('prop_minimumVersion').value;
                 if (minVer) properties.minimumVersion = minVer;
             } else {
-                properties.uninstallPaths = document.getElementById('prop_uninstallPaths').value.split('\n').filter(p => p.trim());
-                properties.uninstallArguments = document.getElementById('prop_uninstallArguments').value;
+                const uninstallArgs = document.getElementById('prop_uninstallArguments').value;
+                if (uninstallArgs) properties.uninstallArguments = uninstallArgs;
             }
             break;
         case 'ShortcutsAllowList':

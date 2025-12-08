@@ -237,9 +237,11 @@ function generateApplicationSummary(props) {
     let md = '```mermaid\nflowchart LR\n';
     if (props.ensureInstalled) {
         md += `    A[Check for ${props.applicationName}] --> B{Installed?}\n`;
-        md += '    B -->|Yes| C[✅ Pass]\n';
+        md += '    B -->|Yes| C{Version OK?}\n';
         md += '    B -->|No| D[Run Installer]\n';
-        md += '    D --> E[✅ Installed]\n';
+        md += '    C -->|Yes| E[✅ Pass]\n';
+        md += '    C -->|No| D\n';
+        md += '    D --> E\n';
     } else {
         md += `    A[Search for ${props.applicationName}] --> B{Found?}\n`;
         md += '    B -->|No| C[✅ Pass]\n';
@@ -250,24 +252,22 @@ function generateApplicationSummary(props) {
 
     md += `**Desired State:** ${props.ensureInstalled ? 'Should be installed' : 'Should NOT be installed'}\n\n`;
 
-    md += '**Detection:**\n';
-    md += `- Application: \`${props.applicationName}\`\n`;
-    md += 'Searches in:\n';
-    (props.searchPaths || []).forEach(p => {
-        md += `- \`${p}\`\n`;
-    });
+    md += '**Detection (Registry-based):**\n';
+    md += `- Display Name: \`${props.displayName || props.applicationName}\`\n`;
+    if (props.publisher) md += `- Publisher: \`${props.publisher}\`\n`;
     if (props.minimumVersion) md += `- Minimum Version: \`${props.minimumVersion}\`\n`;
 
     md += '\n**Remediation:**\n';
     if (props.ensureInstalled) {
-        if (props.installCommand) md += `- Install Command: \`${props.installCommand}\`\n`;
+        if (props.installCommand) {
+            md += `- Install Command: \`${props.installCommand}\`\n`;
+        } else {
+            md += '- No install command specified\n';
+        }
     } else {
-        md += 'Runs uninstaller from:\n';
-        (props.uninstallPaths || []).forEach(p => {
-            md += `- \`${p}\`\n`;
-        });
+        md += '- Uses UninstallString from registry\n';
         if (props.uninstallArguments) {
-            md += `\nArguments: \`${props.uninstallArguments}\`\n`;
+            md += `- Additional Arguments: \`${props.uninstallArguments}\`\n`;
         }
     }
     return md;
