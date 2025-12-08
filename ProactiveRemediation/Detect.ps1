@@ -57,43 +57,62 @@ try {
 function Test-Application {
     param($Properties)
 
-    $found = @()
-    foreach ($searchPath in $Properties.searchPaths) {
-        $items = Get-ChildItem $searchPath -ErrorAction SilentlyContinue
-        if ($items) { $found += $items }
+    # Query all three registry uninstall paths
+    $registryPaths = @(
+        "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*",
+        "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*",
+        "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*"
+    )
+
+    $installedApps = @()
+    foreach ($path in $registryPaths) {
+        $apps = Get-ItemProperty $path -ErrorAction SilentlyContinue | Where-Object {
+            $_.DisplayName -like $Properties.displayName
+        }
+        if ($apps) { $installedApps += $apps }
     }
 
-    $isInstalled = $found.Count -gt 0
+    # Filter by publisher if specified
+    if ($Properties.publisher -and $installedApps.Count -gt 0) {
+        $installedApps = $installedApps | Where-Object {
+            $_.Publisher -like $Properties.publisher
+        }
+    }
+
+    $isInstalled = $installedApps.Count -gt 0
 
     if ($Properties.ensureInstalled) {
         # Application SHOULD be installed
         if (-not $isInstalled) {
             return @{
                 Passed = $false
-                Issue = "$($Properties.applicationName) is not installed"
+                Issue = "$($Properties.applicationName) is not installed (DisplayName: '$($Properties.displayName)' not found in registry)"
             }
         }
 
         # Check minimum version if specified
-        if ($Properties.minimumVersion -and $found.Count -gt 0) {
-            try {
-                $installedVersion = $found[0].VersionInfo.FileVersion
-                if ($installedVersion -and [version]$installedVersion -lt [version]$Properties.minimumVersion) {
-                    return @{
-                        Passed = $false
-                        Issue = "$($Properties.applicationName) version $installedVersion is below minimum required $($Properties.minimumVersion)"
+        if ($Properties.minimumVersion -and $installedApps.Count -gt 0) {
+            $installedVersion = $installedApps[0].DisplayVersion
+            if ($installedVersion) {
+                try {
+                    if ([version]$installedVersion -lt [version]$Properties.minimumVersion) {
+                        return @{
+                            Passed = $false
+                            Issue = "$($Properties.applicationName) version $installedVersion is below minimum required $($Properties.minimumVersion)"
+                        }
                     }
+                } catch {
+                    # Version comparison failed (non-standard version string), skip version check
                 }
-            } catch {
-                # Version comparison failed, assume it's okay
             }
         }
     } else {
         # Application should NOT be installed
         if ($isInstalled) {
+            $versions = ($installedApps | ForEach-Object { $_.DisplayVersion }) -join ", "
             return @{
                 Passed = $false
-                Issue = "$($Properties.applicationName) is installed ($($found.Count) installation(s) found)"
+                Issue = "$($Properties.applicationName) is installed ($($installedApps.Count) installation(s) found, versions: $versions)"
             }
         }
     }

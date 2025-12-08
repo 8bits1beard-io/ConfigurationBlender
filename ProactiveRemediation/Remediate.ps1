@@ -90,33 +90,80 @@ function Repair-Application {
             }
         }
     } else {
-        # Application should NOT be installed - uninstall it
-        $uninstalled = 0
-        foreach ($uninstallPath in $Properties.uninstallPaths) {
-            $installers = Get-ChildItem $uninstallPath -ErrorAction SilentlyContinue
-            foreach ($installer in $installers) {
-                try {
-                    Start-Process -FilePath $installer.FullName -ArgumentList $Properties.uninstallArguments -Wait -PassThru | Out-Null
-                    $uninstalled++
-                } catch {
-                    return @{
-                        Success = $false
-                        Action = "Failed to uninstall from $($installer.FullName): $($_.Exception.Message)"
-                    }
-                }
+        # Application should NOT be installed - find and uninstall using registry UninstallString
+        $registryPaths = @(
+            "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*",
+            "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*",
+            "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*"
+        )
+
+        $installedApps = @()
+        foreach ($path in $registryPaths) {
+            $apps = Get-ItemProperty $path -ErrorAction SilentlyContinue | Where-Object {
+                $_.DisplayName -like $Properties.displayName
+            }
+            if ($apps) { $installedApps += $apps }
+        }
+
+        # Filter by publisher if specified
+        if ($Properties.publisher -and $installedApps.Count -gt 0) {
+            $installedApps = $installedApps | Where-Object {
+                $_.Publisher -like $Properties.publisher
             }
         }
 
-        if ($uninstalled -gt 0) {
+        if ($installedApps.Count -eq 0) {
+            return @{
+                Success = $true
+                Action = "No installations found to remove"
+            }
+        }
+
+        $uninstalled = 0
+        $errors = @()
+
+        foreach ($app in $installedApps) {
+            $uninstallString = $app.UninstallString
+            if (-not $uninstallString) {
+                $errors += "No UninstallString found for '$($app.DisplayName)'"
+                continue
+            }
+
+            try {
+                # Append uninstall arguments if specified (e.g., /quiet /norestart)
+                $uninstallCmd = $uninstallString
+                if ($Properties.uninstallArguments) {
+                    $uninstallCmd = "$uninstallString $($Properties.uninstallArguments)"
+                }
+
+                # Use cmd.exe to execute the uninstall command
+                $process = Start-Process -FilePath "cmd.exe" -ArgumentList "/c `"$uninstallCmd`"" -Wait -PassThru
+                if ($process.ExitCode -eq 0 -or $process.ExitCode -eq 3010) {
+                    # 3010 = reboot required, but uninstall succeeded
+                    $uninstalled++
+                } else {
+                    $errors += "Uninstall of '$($app.DisplayName)' returned exit code $($process.ExitCode)"
+                }
+            } catch {
+                $errors += "Failed to uninstall '$($app.DisplayName)': $($_.Exception.Message)"
+            }
+        }
+
+        if ($uninstalled -gt 0 -and $errors.Count -eq 0) {
             return @{
                 Success = $true
                 Action = "Uninstalled $uninstalled instance(s) of $($Properties.applicationName)"
             }
-        }
-
-        return @{
-            Success = $true
-            Action = "No installations found to remove"
+        } elseif ($uninstalled -gt 0 -and $errors.Count -gt 0) {
+            return @{
+                Success = $false
+                Action = "Uninstalled $uninstalled instance(s) but had errors: $($errors -join '; ')"
+            }
+        } else {
+            return @{
+                Success = $false
+                Action = "Failed to uninstall $($Properties.applicationName): $($errors -join '; ')"
+            }
         }
     }
 }

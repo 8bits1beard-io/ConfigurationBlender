@@ -182,35 +182,47 @@ Configuration Blender supports 16 check types. Each section below documents the 
 
 ### Application
 
-Manages application installation state. Can ensure an application is installed or removed.
+Manages application installation state using Windows Registry detection. Can ensure an application is installed or removed.
 
 **Properties:**
 ```json
 {
   "applicationName": "Google Chrome",
   "ensureInstalled": false,
-  "searchPaths": [
-    "C:\\Program Files*\\Google\\Chrome\\Application\\chrome.exe",
-    "C:\\Users\\*\\AppData\\Local\\Google\\Chrome\\Application\\chrome.exe"
-  ],
-  "uninstallPaths": [
-    "C:\\Program Files*\\Google\\Chrome\\Application\\*\\Installer\\setup.exe"
-  ],
+  "displayName": "Google Chrome*",
+  "publisher": "Google LLC",
   "uninstallArguments": "--uninstall --force-uninstall",
   "installCommand": "winget install Google.Chrome",
   "minimumVersion": "120.0.0.0"
 }
 ```
 
+| Property | Required | Description |
+|----------|----------|-------------|
+| `applicationName` | Yes | Human-readable name for logging |
+| `ensureInstalled` | Yes | `true` to ensure installed, `false` to ensure removed |
+| `displayName` | Yes | Registry DisplayName to match (supports wildcards like `*`) |
+| `publisher` | No | Filter by Publisher field for more precise matching |
+| `minimumVersion` | No | Minimum required version (compared against DisplayVersion) |
+| `installCommand` | No* | Command to install the application (*required if `ensureInstalled: true`) |
+| `uninstallArguments` | No | Additional arguments to append to UninstallString (e.g., `/quiet /norestart`) |
+
 **Detection:**
-1. Search for files matching `searchPaths` using wildcard expansion
-2. If `ensureInstalled: true` - FAIL if not found
-3. If `ensureInstalled: false` - FAIL if found
-4. If `minimumVersion` specified, compare file version
+1. Query Windows Registry uninstall keys:
+   - `HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*` (64-bit)
+   - `HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*` (32-bit)
+   - `HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*` (per-user)
+2. Find entries where `DisplayName` matches (supports wildcards)
+3. If `publisher` specified, filter by Publisher field
+4. If `ensureInstalled: true` - FAIL if not found
+5. If `ensureInstalled: false` - FAIL if found
+6. If `minimumVersion` specified, compare against `DisplayVersion`
 
 **Remediation:**
-- If should be installed: Execute `installCommand`
-- If should not be installed: Run uninstaller from `uninstallPaths` with `uninstallArguments`
+- If should be installed: Execute `installCommand` via cmd.exe
+- If should not be installed: Execute `UninstallString` from registry with optional `uninstallArguments`
+
+**Note:** This method detects applications registered in Windows, which includes most MSI and EXE installers. Portable applications or apps installed without registration will not be detected.
 
 ---
 
