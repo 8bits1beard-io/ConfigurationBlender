@@ -61,7 +61,59 @@ function Repair-Application {
     param($Properties, $CheckName)
 
     if ($Properties.ensureInstalled) {
-        # Application SHOULD be installed - run install command
+        # Application SHOULD be installed - check if already installed first
+        $registryPaths = @(
+            "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*",
+            "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*",
+            "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*"
+        )
+
+        $installedApps = @()
+        foreach ($path in $registryPaths) {
+            $apps = Get-ItemProperty $path -ErrorAction SilentlyContinue | Where-Object {
+                $_.DisplayName -like $Properties.displayName
+            }
+            if ($apps) { $installedApps += $apps }
+        }
+
+        # Filter by publisher if specified
+        if ($Properties.publisher -and $installedApps.Count -gt 0) {
+            $installedApps = $installedApps | Where-Object {
+                $_.Publisher -like $Properties.publisher
+            }
+        }
+
+        # Check if already installed with correct version
+        if ($installedApps.Count -gt 0) {
+            $installedVersion = $installedApps[0].DisplayVersion
+
+            # If minimum version specified, check if update needed
+            if ($Properties.minimumVersion -and $installedVersion) {
+                try {
+                    if ([version]$installedVersion -ge [version]$Properties.minimumVersion) {
+                        return @{
+                            Success = $true
+                            Action = "$($Properties.applicationName) already installed (version $installedVersion)"
+                        }
+                    }
+                    # Version too old, proceed with install/update
+                } catch {
+                    # Version comparison failed, assume installed is OK
+                    return @{
+                        Success = $true
+                        Action = "$($Properties.applicationName) already installed (version $installedVersion)"
+                    }
+                }
+            } else {
+                # No minimum version required, already installed
+                return @{
+                    Success = $true
+                    Action = "$($Properties.applicationName) already installed (version $installedVersion)"
+                }
+            }
+        }
+
+        # Not installed or needs update - run install command
         if (-not $Properties.installCommand) {
             return @{
                 Success = $false
@@ -388,13 +440,30 @@ function Repair-ShortcutProperties {
     param($Properties, $CheckName)
 
     try {
+        $shell = New-Object -ComObject WScript.Shell
+
+        # Check if shortcut already exists and has correct properties
+        if (Test-Path $Properties.path) {
+            $existingShortcut = $shell.CreateShortcut($Properties.path)
+
+            $targetMatch = $existingShortcut.TargetPath -eq $Properties.targetPath
+            $argsMatch = (-not $Properties.arguments -and -not $existingShortcut.Arguments) -or ($existingShortcut.Arguments -eq $Properties.arguments)
+            $iconMatch = (-not $Properties.iconLocation) -or ($existingShortcut.IconLocation -eq $Properties.iconLocation)
+
+            if ($targetMatch -and $argsMatch -and $iconMatch) {
+                return @{
+                    Success = $true
+                    Action = "Shortcut already configured correctly: $($Properties.path)"
+                }
+            }
+        }
+
         # Ensure parent directory exists
         $parentDir = Split-Path $Properties.path -Parent
         if (-not (Test-Path $parentDir)) {
             New-Item -ItemType Directory -Path $parentDir -Force | Out-Null
         }
 
-        $shell = New-Object -ComObject WScript.Shell
         $shortcut = $shell.CreateShortcut($Properties.path)
         $shortcut.TargetPath = $Properties.targetPath
         $shortcut.Arguments = $Properties.arguments
@@ -444,8 +513,17 @@ function Repair-AssignedAccess {
             }
 
             $configXml = Get-Content -Path $xmlPath -Raw
+            $encodedConfig = [System.Net.WebUtility]::HtmlEncode($configXml)
 
-            $obj.Configuration = [System.Net.WebUtility]::HtmlEncode($configXml)
+            # Check if configuration already matches
+            if ($obj.Configuration -eq $encodedConfig) {
+                return @{
+                    Success = $true
+                    Action = "Assigned Access configuration already applied correctly"
+                }
+            }
+
+            $obj.Configuration = $encodedConfig
             Set-CimInstance -CimInstance $obj -ErrorAction Stop
 
             return @{
@@ -503,7 +581,17 @@ function Repair-AssignedAccess {
 </AssignedAccessConfiguration>
 "@
 
-        $obj.Configuration = [System.Net.WebUtility]::HtmlEncode($configXml)
+        $encodedConfig = [System.Net.WebUtility]::HtmlEncode($configXml)
+
+        # Check if configuration already matches
+        if ($obj.Configuration -eq $encodedConfig) {
+            return @{
+                Success = $true
+                Action = "Assigned Access configuration already applied correctly (legacy property-based)"
+            }
+        }
+
+        $obj.Configuration = $encodedConfig
         Set-CimInstance -CimInstance $obj -ErrorAction Stop
 
         return @{
@@ -1146,7 +1234,23 @@ function Repair-WindowsFeature {
     try {
         $desiredState = $Properties.state
 
-        if ($desiredState -eq "Enabled") {
+        # Check current state first
+        $feature = Get-WindowsOptionalFeature -Online -FeatureName $Properties.featureName -ErrorAction Stop
+        $currentState = $feature.State
+
+        # Map current state to our expected values
+        $isEnabled = $currentState -eq "Enabled"
+        $shouldBeEnabled = $desiredState -eq "Enabled"
+
+        # Already in desired state
+        if ($isEnabled -eq $shouldBeEnabled) {
+            return @{
+                Success = $true
+                Action = "Windows feature '$($Properties.featureName)' already $($desiredState.ToLower())"
+            }
+        }
+
+        if ($shouldBeEnabled) {
             Enable-WindowsOptionalFeature -Online -FeatureName $Properties.featureName -NoRestart -ErrorAction Stop
 
             return @{
@@ -1237,6 +1341,45 @@ function Repair-CertificateInstalled {
         $storeLocation = if ($Properties.storeLocation) { $Properties.storeLocation } else { "LocalMachine" }
         $storeName = if ($Properties.storeName) { $Properties.storeName } else { "My" }
         $certPath = "Cert:\$storeLocation\$storeName"
+
+        # Check if certificate already exists in store
+        $existingCert = $null
+        if ($Properties.thumbprint) {
+            $existingCert = Get-ChildItem $certPath -ErrorAction SilentlyContinue | Where-Object {
+                $_.Thumbprint -eq $Properties.thumbprint
+            }
+        } elseif ($Properties.subject) {
+            $existingCert = Get-ChildItem $certPath -ErrorAction SilentlyContinue | Where-Object {
+                $_.Subject -like "*$($Properties.subject)*"
+            }
+        }
+
+        if ($existingCert) {
+            # Certificate exists - check if it's valid and meets minimum days requirement
+            $validCert = $existingCert | Where-Object {
+                $_.NotBefore -le (Get-Date) -and $_.NotAfter -gt (Get-Date)
+            } | Select-Object -First 1
+
+            if ($validCert) {
+                # Check minimum days valid if specified
+                if ($Properties.minimumDaysValid) {
+                    $daysUntilExpiry = ($validCert.NotAfter - (Get-Date)).Days
+                    if ($daysUntilExpiry -ge $Properties.minimumDaysValid) {
+                        return @{
+                            Success = $true
+                            Action = "Certificate already installed and valid (Thumbprint: $($validCert.Thumbprint), expires in $daysUntilExpiry days)"
+                        }
+                    }
+                    # Certificate expiring soon, proceed with reinstall
+                } else {
+                    return @{
+                        Success = $true
+                        Action = "Certificate already installed and valid (Thumbprint: $($validCert.Thumbprint))"
+                    }
+                }
+            }
+            # Certificate exists but is expired or expiring soon, proceed with import
+        }
 
         # Check if we have a source certificate file
         if ($Properties.sourceAssetPath) {
@@ -1417,37 +1560,49 @@ function Repair-NetworkAdapterConfiguration {
             $targetIP = $Properties.staticIPAddress
             $prefixLength = if ($Properties.subnetPrefixLength) { $Properties.subnetPrefixLength } else { 24 }
 
-            # Remove existing IP configuration
-            $existingIP = Get-NetIPAddress -InterfaceIndex $adapterIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue
-            if ($existingIP) {
-                Remove-NetIPAddress -InterfaceIndex $adapterIndex -AddressFamily IPv4 -Confirm:$false -ErrorAction SilentlyContinue
-            }
+            # Check if already configured correctly
+            $existingIP = Get-NetIPAddress -InterfaceIndex $adapterIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+                Where-Object { $_.AddressState -eq "Preferred" } | Select-Object -First 1
+            $existingRoute = Get-NetRoute -InterfaceIndex $adapterIndex -AddressFamily IPv4 -DestinationPrefix "0.0.0.0/0" -ErrorAction SilentlyContinue | Select-Object -First 1
+            $existingGateway = if ($existingRoute) { $existingRoute.NextHop } else { $null }
+            $expectedGateway = if ($Properties.PSObject.Properties.Name -contains 'defaultGateway') { $Properties.defaultGateway } else { $null }
 
-            # Remove existing gateway
-            $existingRoute = Get-NetRoute -InterfaceIndex $adapterIndex -AddressFamily IPv4 -DestinationPrefix "0.0.0.0/0" -ErrorAction SilentlyContinue
-            if ($existingRoute) {
-                Remove-NetRoute -InterfaceIndex $adapterIndex -AddressFamily IPv4 -DestinationPrefix "0.0.0.0/0" -Confirm:$false -ErrorAction SilentlyContinue
-            }
+            $ipMatch = $existingIP -and $existingIP.IPAddress -eq $targetIP -and $existingIP.PrefixLength -eq $prefixLength
+            $gatewayMatch = ($null -eq $expectedGateway -and $null -eq $existingGateway) -or ($existingGateway -eq $expectedGateway)
 
-            $newIPParams = @{
-                InterfaceIndex = $adapterIndex
-                IPAddress = $targetIP
-                PrefixLength = $prefixLength
-                AddressFamily = "IPv4"
-            }
-
-            # Only add gateway if explicitly specified and not empty
-            if ($Properties.PSObject.Properties.Name -contains 'defaultGateway' -and -not [string]::IsNullOrEmpty($Properties.defaultGateway)) {
-                $newIPParams['DefaultGateway'] = $Properties.defaultGateway
-            }
-
-            New-NetIPAddress @newIPParams -ErrorAction Stop | Out-Null
-            $actions += "Set static IP on '$adapterName': $targetIP/$prefixLength"
-
-            if ($Properties.defaultGateway) {
-                $actions += "Set gateway: $($Properties.defaultGateway)"
+            if ($ipMatch -and $gatewayMatch) {
+                $actions += "Static IP already configured correctly: $targetIP/$prefixLength"
             } else {
-                $actions += "No gateway configured (isolated network)"
+                # Remove existing IP configuration
+                if ($existingIP) {
+                    Remove-NetIPAddress -InterfaceIndex $adapterIndex -AddressFamily IPv4 -Confirm:$false -ErrorAction SilentlyContinue
+                }
+
+                # Remove existing gateway
+                if ($existingRoute) {
+                    Remove-NetRoute -InterfaceIndex $adapterIndex -AddressFamily IPv4 -DestinationPrefix "0.0.0.0/0" -Confirm:$false -ErrorAction SilentlyContinue
+                }
+
+                $newIPParams = @{
+                    InterfaceIndex = $adapterIndex
+                    IPAddress = $targetIP
+                    PrefixLength = $prefixLength
+                    AddressFamily = "IPv4"
+                }
+
+                # Only add gateway if explicitly specified and not empty
+                if ($Properties.PSObject.Properties.Name -contains 'defaultGateway' -and -not [string]::IsNullOrEmpty($Properties.defaultGateway)) {
+                    $newIPParams['DefaultGateway'] = $Properties.defaultGateway
+                }
+
+                New-NetIPAddress @newIPParams -ErrorAction Stop | Out-Null
+                $actions += "Set static IP on '$adapterName': $targetIP/$prefixLength"
+
+                if ($Properties.defaultGateway) {
+                    $actions += "Set gateway: $($Properties.defaultGateway)"
+                } else {
+                    $actions += "No gateway configured (isolated network)"
+                }
             }
         } elseif ($Properties.staticIPRange) {
             # IP range mode - find adapter with DHCP IP in range and convert to static
@@ -1612,33 +1767,54 @@ function Repair-NetworkAdapterConfiguration {
 
         # Configure DNS servers - support clearing DNS
         if ($Properties.PSObject.Properties.Name -contains 'dnsServers') {
-            if ($null -eq $Properties.dnsServers -or $Properties.dnsServers.Count -eq 0) {
-                # Clear DNS servers
-                Set-DnsClientServerAddress -InterfaceIndex $adapterIndex -ResetServerAddresses -ErrorAction Stop
-                $actions += "Cleared DNS servers"
-            } else {
-                Set-DnsClientServerAddress -InterfaceIndex $adapterIndex -ServerAddresses $Properties.dnsServers -ErrorAction Stop
-                $actions += "Set DNS: $($Properties.dnsServers -join ', ')"
+            $currentDns = (Get-DnsClientServerAddress -InterfaceIndex $adapterIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue).ServerAddresses
+            $desiredDns = $Properties.dnsServers
+
+            # Compare DNS settings
+            $dnsMatch = $false
+            if (($null -eq $desiredDns -or $desiredDns.Count -eq 0) -and ($null -eq $currentDns -or $currentDns.Count -eq 0)) {
+                $dnsMatch = $true
+            } elseif ($currentDns -and $desiredDns -and ($currentDns -join ',') -eq ($desiredDns -join ',')) {
+                $dnsMatch = $true
+            }
+
+            if (-not $dnsMatch) {
+                if ($null -eq $Properties.dnsServers -or $Properties.dnsServers.Count -eq 0) {
+                    Set-DnsClientServerAddress -InterfaceIndex $adapterIndex -ResetServerAddresses -ErrorAction Stop
+                    $actions += "Cleared DNS servers"
+                } else {
+                    Set-DnsClientServerAddress -InterfaceIndex $adapterIndex -ServerAddresses $Properties.dnsServers -ErrorAction Stop
+                    $actions += "Set DNS: $($Properties.dnsServers -join ', ')"
+                }
             }
         }
 
         # Configure DNS registration
         if ($Properties.PSObject.Properties.Name -contains 'registerInDns') {
-            Set-DnsClient -InterfaceIndex $adapterIndex -RegisterThisConnectionsAddress $Properties.registerInDns -ErrorAction Stop
-            $state = if ($Properties.registerInDns) { "enabled" } else { "disabled" }
-            $actions += "DNS registration $state"
+            $currentRegister = (Get-DnsClient -InterfaceIndex $adapterIndex -ErrorAction SilentlyContinue).RegisterThisConnectionsAddress
+            if ($currentRegister -ne $Properties.registerInDns) {
+                Set-DnsClient -InterfaceIndex $adapterIndex -RegisterThisConnectionsAddress $Properties.registerInDns -ErrorAction Stop
+                $state = if ($Properties.registerInDns) { "enabled" } else { "disabled" }
+                $actions += "DNS registration $state"
+            }
         }
 
         # Set network category (Public/Private)
         if ($Properties.networkCategory) {
-            Set-NetConnectionProfile -InterfaceIndex $adapterIndex -NetworkCategory $Properties.networkCategory -ErrorAction Stop
-            $actions += "Set network category: $($Properties.networkCategory)"
+            $currentCategory = (Get-NetConnectionProfile -InterfaceIndex $adapterIndex -ErrorAction SilentlyContinue).NetworkCategory
+            if ($currentCategory -ne $Properties.networkCategory) {
+                Set-NetConnectionProfile -InterfaceIndex $adapterIndex -NetworkCategory $Properties.networkCategory -ErrorAction Stop
+                $actions += "Set network category: $($Properties.networkCategory)"
+            }
         }
 
         # Set interface metric
         if ($Properties.interfaceMetric) {
-            Set-NetIPInterface -InterfaceIndex $adapterIndex -AddressFamily IPv4 -InterfaceMetric $Properties.interfaceMetric -ErrorAction Stop
-            $actions += "Set interface metric: $($Properties.interfaceMetric)"
+            $currentMetric = (Get-NetIPInterface -InterfaceIndex $adapterIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue).InterfaceMetric
+            if ($currentMetric -ne $Properties.interfaceMetric) {
+                Set-NetIPInterface -InterfaceIndex $adapterIndex -AddressFamily IPv4 -InterfaceMetric $Properties.interfaceMetric -ErrorAction Stop
+                $actions += "Set interface metric: $($Properties.interfaceMetric)"
+            }
         }
 
         if ($actions.Count -eq 0) {
@@ -1752,13 +1928,36 @@ function Repair-EdgeFavorites {
 
                 # Check if Bookmarks file exists and read existing structure
                 $bookmarksData = $null
+                $needsUpdate = $true
                 if (Test-Path $bookmarksPath) {
                     try {
                         $existingContent = Get-Content $bookmarksPath -Raw
                         $bookmarksData = $existingContent | ConvertFrom-Json
+
+                        # Check if existing bookmarks match expected
+                        $existingBookmarks = $bookmarksData.roots.bookmark_bar.children
+                        if ($existingBookmarks -and $existingBookmarks.Count -eq $expectedFavorites.Count) {
+                            $allMatch = $true
+                            for ($i = 0; $i -lt $expectedFavorites.Count; $i++) {
+                                $expected = $expectedFavorites[$i]
+                                $existing = $existingBookmarks | Where-Object { $_.name -eq $expected.Name -and $_.url -eq $expected.Url }
+                                if (-not $existing) {
+                                    $allMatch = $false
+                                    break
+                                }
+                            }
+                            if ($allMatch) {
+                                $needsUpdate = $false
+                            }
+                        }
                     } catch {
                         # Corrupted file, will create new
                     }
+                }
+
+                # Skip if already correct
+                if (-not $needsUpdate) {
+                    continue
                 }
 
                 # Create new or update existing structure
@@ -1823,6 +2022,13 @@ function Repair-EdgeFavorites {
             return @{
                 Success = $false
                 Action = $failures -join "; "
+            }
+        }
+
+        if ($actions.Count -eq 0) {
+            return @{
+                Success = $true
+                Action = "Edge favorites already configured correctly for all profiles"
             }
         }
 
