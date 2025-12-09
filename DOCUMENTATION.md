@@ -47,11 +47,11 @@ Tools/New-IntunePackage.ps1          +---------------------------+
            |                                    |
            v                                    v
 +---------------------------+        +---------------------------+
-| Output/                   |        | Intune Proactive          |
+| IntunePackages/ROLE/      |        | Intune Proactive          |
 |   ROLE_vX.Y.Z.intunewin   |  --->  |   Remediation             |
-+---------------------------+        |     Detect.ps1            |
-                                     |     Remediate.ps1         |
-                                     +---------------------------+
+|   Detect.ps1              |        |     Detect.ps1            |
+|   README.md               |        |     Remediate.ps1         |
++---------------------------+        +---------------------------+
 ```
 
 ### High-Level Workflow
@@ -100,7 +100,11 @@ ConfigurationBlender/
 │   ├── Debug-AssignedAccess.ps1   # Troubleshooting helper
 │   └── IntuneWinAppUtil.exe    # Microsoft packaging tool (gitignored)
 │
-├── Output/                     # Generated packages (gitignored)
+├── IntunePackages/             # Generated packages (gitignored)
+│   └── ROLE/                  # Role-specific output subfolder
+│       ├── ROLE_vX.Y.Z.intunewin
+│       ├── Detect.ps1
+│       └── README.md
 ├── DOCUMENTATION.md            # This file
 └── README.md                   # Executive overview
 ```
@@ -893,7 +897,10 @@ Place supporting files in `Assets/` subdirectories:
 .\Tools\New-IntunePackage.ps1 -Role "US_CBL" -WhatIf
 ```
 
-**Output:** `Output/US_CBL_v1.0.0.intunewin`
+**Output folder:** `IntunePackages/US_CBL/` containing:
+- `US_CBL_v1.0.0.intunewin` - Package for Intune
+- `Detect.ps1` - Detection script for Intune
+- `README.md` - Configuration summary (auto-displays on GitHub)
 
 ### Step 4: Deploy Win32 App
 
@@ -986,7 +993,17 @@ Creates `.intunewin` packages for Intune deployment.
 2. Copies `Packaging/Install.ps1` to role folder
 3. Generates `Detect.ps1` with role/version placeholders replaced
 4. Runs `IntuneWinAppUtil.exe` to create package
-5. Renames output to `ROLE_vX.Y.Z.intunewin`
+5. Copies `Detect.ps1` to output folder
+6. Generates summary markdown with clickable check index
+
+**Output structure:**
+```
+IntunePackages/
+└── US_CBL/                        # Role-specific subfolder
+    ├── US_CBL_v1.0.0.intunewin    # Intune package
+    ├── Detect.ps1                 # Detection script for Intune upload
+    └── README.md                  # Configuration summary (auto-displays on GitHub)
+```
 
 **Prerequisite:** Download `IntuneWinAppUtil.exe` to `Tools/`:
 ```powershell

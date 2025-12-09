@@ -769,7 +769,8 @@ function generateNetworkAdapterSummary(props) {
 function generateCheckSummary(check, index) {
     const icon = checkTypeIcons[check.type] || '📋';
     const props = check.properties;
-    let md = `### ${index + 1}. ${icon} ${check.name}\n`;
+    const anchorId = generateAnchorId(index + 1, check.name);
+    let md = `### <a id="${anchorId}"></a>${index + 1}. ${icon} ${check.name}\n`;
     md += `**Type:** \`${check.type}\`  \n`;
     md += `**ID:** \`${check.id}\`  \n`;
     md += `**Enabled:** ${check.enabled ? 'Yes' : 'No'}\n\n`;
@@ -839,6 +840,15 @@ function generateCheckSummary(check, index) {
 // Summary Export - Main Functions
 // ============================================================================
 
+// Generate anchor ID from check name (GitHub-compatible)
+function generateAnchorId(index, name) {
+    const cleanName = name.toLowerCase()
+        .replace(/[^\w\s-]/g, '') // Remove special chars except spaces and hyphens
+        .replace(/\s+/g, '-')     // Replace spaces with hyphens
+        .replace(/-+/g, '-');     // Collapse multiple hyphens
+    return `${index}-${cleanName}`;
+}
+
 function generateSummaryMarkdown() {
     const config = getConfig();
     const configChecks = config.checks || [];
@@ -879,6 +889,16 @@ function generateSummaryMarkdown() {
     md += '| Type | Count | Icon |\n|------|-------|------|\n';
     Object.keys(typeCounts).sort().forEach(type => {
         md += `| ${type} | ${typeCounts[type]} | ${checkTypeIcons[type] || '📋'} |\n`;
+    });
+    md += '\n';
+
+    // Check Index (Table of Contents with hyperlinks)
+    md += '## Check Index\n\n';
+    md += '| # | Check Name | Type |\n|---|------------|------|\n';
+    configChecks.forEach((check, index) => {
+        const icon = checkTypeIcons[check.type] || '📋';
+        const anchorId = generateAnchorId(index + 1, check.name);
+        md += `| ${index + 1} | [${icon} ${check.name}](#${anchorId}) | \`${check.type}\` |\n`;
     });
     md += '\n';
 

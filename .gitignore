@@ -9,8 +9,7 @@ Tools/IntuneWinAppUtil.exe
 # Generated Intune Packages
 # ============================================================================
 *.intunewin
-Output/
-Packages/
+IntunePackages/
 
 # ============================================================================
 # Role Configurations (folder structure only, contents not tracked)

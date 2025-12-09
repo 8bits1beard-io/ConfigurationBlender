@@ -48,7 +48,7 @@ param(
     [string]$Role,
 
     [Parameter(Mandatory = $false)]
-    [string]$OutputPath = "Output"
+    [string]$OutputPath = "IntunePackages"
 )
 
 $ErrorActionPreference = "Stop"
@@ -267,10 +267,12 @@ if ($PSCmdlet.ShouldProcess($DetectDest, "Generate Detect.ps1")) {
 }
 
 # ============================================================================
-# CREATE OUTPUT DIRECTORY
+# CREATE OUTPUT DIRECTORY (Role-specific subfolder)
 # ============================================================================
 
-$OutputDir = Join-Path $RepoRoot $OutputPath
+$OutputBaseDir = Join-Path $RepoRoot $OutputPath
+$OutputDir = Join-Path $OutputBaseDir $Role
+
 if (-not (Test-Path $OutputDir)) {
     if ($PSCmdlet.ShouldProcess($OutputDir, "Create output directory")) {
         New-Item -ItemType Directory -Path $OutputDir -Force | Out-Null
@@ -334,6 +336,162 @@ if ($PSCmdlet.ShouldProcess($OutputFile, "Create Intune package")) {
 }
 
 # ============================================================================
+# COPY DETECT.PS1 TO OUTPUT FOLDER AND CLEANUP
+# ============================================================================
+
+$DetectOutputPath = Join-Path $OutputDir "Detect.ps1"
+if ($PSCmdlet.ShouldProcess($DetectOutputPath, "Copy Detect.ps1 to output folder")) {
+    Copy-Item -Path $DetectDest -Destination $DetectOutputPath -Force
+    Write-Success "Copied Detect.ps1 to output folder"
+}
+
+# Clean up temporary files from Configurations folder (no longer needed after packaging)
+if ($PSCmdlet.ShouldProcess($DetectDest, "Remove temporary Detect.ps1 from Configurations folder")) {
+    Remove-Item -Path $DetectDest -Force -ErrorAction SilentlyContinue
+}
+if ($PSCmdlet.ShouldProcess($InstallDest, "Remove temporary Install.ps1 from Configurations folder")) {
+    Remove-Item -Path $InstallDest -Force -ErrorAction SilentlyContinue
+}
+Write-Success "Cleaned up temporary files from Configurations folder"
+
+# ============================================================================
+# GENERATE SUMMARY MARKDOWN
+# ============================================================================
+
+Write-Header "Generating Configuration Summary"
+
+$SummaryOutputPath = Join-Path $OutputDir "README.md"
+
+if ($PSCmdlet.ShouldProcess($SummaryOutputPath, "Generate summary markdown")) {
+    # Generate summary markdown from Config.json
+    $summaryMd = @()
+    $summaryMd += "# $($Config.role) Summary"
+    $summaryMd += ""
+    $summaryMd += "## Overview"
+    $summaryMd += ""
+    $summaryMd += "| Property | Value |"
+    $summaryMd += "|----------|-------|"
+    $summaryMd += "| Role | $($Config.role) |"
+    $summaryMd += "| Version | $($Config.version) |"
+    $summaryMd += "| Description | $($Config.description) |"
+    $summaryMd += "| Author | $($Config.author) |"
+    $summaryMd += "| Last Modified | $($Config.lastModified) |"
+    $summaryMd += "| Total Checks | $($Config.checks.Count) |"
+    $summaryMd += ""
+
+    # Process flow diagram
+    $summaryMd += "## Process Flow"
+    $summaryMd += ""
+    $summaryMd += '```mermaid'
+    $summaryMd += "flowchart TD"
+    $summaryMd += "    A[Intune Proactive Remediation] --> B[Detect.ps1]"
+    $summaryMd += "    B --> C{All Checks Pass?}"
+    $summaryMd += "    C -->|Yes| D[Exit 0 - Compliant]"
+    $summaryMd += "    C -->|No| E[Exit 1 - Non-Compliant]"
+    $summaryMd += "    E --> F[Remediate.ps1]"
+    $summaryMd += "    F --> G[Fix Failed Checks]"
+    $summaryMd += "    G --> H[Log Results]"
+    $summaryMd += '```'
+    $summaryMd += ""
+
+    # Count checks by type
+    $typeCounts = @{}
+    foreach ($check in $Config.checks) {
+        if ($typeCounts.ContainsKey($check.type)) {
+            $typeCounts[$check.type]++
+        } else {
+            $typeCounts[$check.type] = 1
+        }
+    }
+
+    # Check type icons
+    $checkTypeIcons = @{
+        'Application' = '📦'
+        'FolderExists' = '📁'
+        'FilesExist' = '📄'
+        'ShortcutsAllowList' = '🔗'
+        'ShortcutExists' = '🔗'
+        'ShortcutProperties' = '🔗'
+        'AssignedAccess' = '🖥️'
+        'RegistryValue' = '🗝️'
+        'ScheduledTaskExists' = '⏰'
+        'ServiceRunning' = '⚙️'
+        'PrinterInstalled' = '🖨️'
+        'DriverInstalled' = '🔧'
+        'WindowsFeature' = '⚙️'
+        'FirewallRule' = '🛡️'
+        'CertificateInstalled' = '🔐'
+        'NetworkAdapterConfiguration' = '🌐'
+        'EdgeFavorites' = '⭐'
+    }
+
+    $summaryMd += "## Checks by Type"
+    $summaryMd += ""
+    $summaryMd += "| Type | Count | Icon |"
+    $summaryMd += "|------|-------|------|"
+    foreach ($type in ($typeCounts.Keys | Sort-Object)) {
+        $icon = if ($checkTypeIcons.ContainsKey($type)) { $checkTypeIcons[$type] } else { '📋' }
+        $summaryMd += "| $type | $($typeCounts[$type]) | $icon |"
+    }
+    $summaryMd += ""
+
+    # Helper function to generate anchor ID (GitHub-compatible)
+    function Get-AnchorId {
+        param([int]$Index, [string]$Name)
+        $cleanName = $Name.ToLower() -replace '[^\w\s-]', '' -replace '\s+', '-' -replace '-+', '-'
+        return "$Index-$cleanName"
+    }
+
+    # Check Index (Table of Contents with hyperlinks)
+    $summaryMd += "## Check Index"
+    $summaryMd += ""
+    $summaryMd += "| # | Check Name | Type |"
+    $summaryMd += "|---|------------|------|"
+    $checkIndex = 1
+    foreach ($check in $Config.checks) {
+        $icon = if ($checkTypeIcons.ContainsKey($check.type)) { $checkTypeIcons[$check.type] } else { '📋' }
+        $anchorId = Get-AnchorId -Index $checkIndex -Name $check.name
+        $summaryMd += "| $checkIndex | [$icon $($check.name)](#$anchorId) | ``$($check.type)`` |"
+        $checkIndex++
+    }
+    $summaryMd += ""
+
+    # Check details
+    $summaryMd += "## Check Details"
+    $summaryMd += ""
+
+    $checkIndex = 1
+    foreach ($check in $Config.checks) {
+        $icon = if ($checkTypeIcons.ContainsKey($check.type)) { $checkTypeIcons[$check.type] } else { '📋' }
+        $anchorId = Get-AnchorId -Index $checkIndex -Name $check.name
+        $summaryMd += "### <a id=`"$anchorId`"></a>$checkIndex. $icon $($check.name)"
+        $summaryMd += "**Type:** ``$($check.type)``  "
+        $summaryMd += "**ID:** ``$($check.id)``  "
+        $summaryMd += "**Enabled:** $(if ($check.enabled) { 'Yes' } else { 'No' })"
+        $summaryMd += ""
+
+        # Add properties as JSON block
+        $propsJson = $check.properties | ConvertTo-Json -Depth 5
+        $summaryMd += '```json'
+        $summaryMd += $propsJson
+        $summaryMd += '```'
+        $summaryMd += ""
+        $summaryMd += "---"
+        $summaryMd += ""
+
+        $checkIndex++
+    }
+
+    # Footer
+    $summaryMd += ""
+    $summaryMd += "*Generated by Configuration Blender Package Builder on $(Get-Date -Format 'yyyy-MM-dd')*"
+
+    # Write to file
+    $summaryMd -join "`n" | Set-Content -Path $SummaryOutputPath -Encoding UTF8
+    Write-Success "Generated summary: $SummaryOutputPath"
+}
+
+# ============================================================================
 # SUCCESS SUMMARY
 # ============================================================================
 
@@ -345,8 +503,11 @@ Write-Host "   Role:        $($Config.role)" -ForegroundColor White
 Write-Host "   Version:     $($Config.version)" -ForegroundColor White
 Write-Host "   Description: $($Config.description)" -ForegroundColor White
 Write-Host "   Author:      $($Config.author)" -ForegroundColor White
-Write-Host "   Package:     $OutputFile" -ForegroundColor Cyan
-Write-Host "   Size:        $([math]::Round((Get-Item $OutputFile).Length / 1KB, 2)) KB" -ForegroundColor White
+Write-Host ""
+Write-Host "📁 Output Folder: $OutputDir" -ForegroundColor Cyan
+Write-Host "   • $PackageName ($([math]::Round((Get-Item $OutputFile).Length / 1KB, 2)) KB)" -ForegroundColor White
+Write-Host "   • Detect.ps1" -ForegroundColor White
+Write-Host "   • README.md" -ForegroundColor White
 
 Write-Host ""
 Write-Host "📋 Next Steps - Upload to Intune:" -ForegroundColor Yellow
@@ -361,20 +522,23 @@ Write-Host ""
 Write-Host "   4. App package file:" -ForegroundColor White
 Write-Host "      $OutputFile" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "   5. Install command:" -ForegroundColor White
+Write-Host "   5. App information - set version to match Config.json:" -ForegroundColor White
+Write-Host "      Version: $($Config.version)" -ForegroundColor Cyan
+Write-Host ""
+Write-Host "   6. Install command:" -ForegroundColor White
 Write-Host "      powershell.exe -ExecutionPolicy Bypass -File Install.ps1" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "   6. Uninstall command:" -ForegroundColor White
+Write-Host "   7. Uninstall command:" -ForegroundColor White
 Write-Host "      cmd.exe /c echo No uninstall" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "   7. Detection rules: Use a custom detection script" -ForegroundColor White
-Write-Host "      Upload: $DetectDest" -ForegroundColor Cyan
+Write-Host "   8. Detection rules: Use a custom detection script" -ForegroundColor White
+Write-Host "      Upload: $DetectOutputPath" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "   8. Requirements:" -ForegroundColor White
+Write-Host "   9. Requirements:" -ForegroundColor White
 Write-Host "      Operating system architecture: 64-bit" -ForegroundColor Cyan
-Write-Host "      Minimum operating system: Windows 10 1607" -ForegroundColor Cyan
+Write-Host "      Minimum operating system: Windows 11 22H2" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "   9. Assign to device group for role: $($Config.role)" -ForegroundColor White
+Write-Host "  10. Assign to device group for role: $($Config.role)" -ForegroundColor White
 Write-Host ""
 Write-Host "🔄 To update this configuration:" -ForegroundColor Yellow
 Write-Host "   1. Edit Config.json or Assets" -ForegroundColor White

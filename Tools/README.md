@@ -49,7 +49,8 @@ This folder contains tools for Configuration Blender package creation.
 - ✅ Automatic role and version detection from Config.json
 - ✅ Validates all prerequisites before packaging
 - ✅ Generates Detect.ps1 with correct role and version
-- ✅ Creates properly named output: `[ROLE]_v[VERSION].intunewin`
+- ✅ Creates properly named output in role-specific subfolder
+- ✅ Generates summary markdown with clickable check index
 - ✅ Displays complete Intune upload instructions
 
 **Quick Start:**
@@ -70,8 +71,18 @@ This folder contains tools for Configuration Blender package creation.
 3. Copies Install.ps1 to role folder
 4. Generates Detect.ps1 with role name and version replaced
 5. Runs IntuneWinAppUtil.exe to create .intunewin package
-6. Outputs to `Output/[ROLE]_v[VERSION].intunewin`
-7. Shows complete Intune upload instructions
+6. Copies Detect.ps1 to output folder
+7. Generates summary markdown with clickable index
+8. Shows complete Intune upload instructions
+
+**Output Structure:**
+```
+IntunePackages/
+└── US_CBL/                        # Role-specific subfolder
+    ├── US_CBL_v1.0.0.intunewin    # Intune package
+    ├── Detect.ps1                 # Detection script for Intune
+    └── README.md                  # Configuration summary (auto-displays on GitHub)
+```
 
 **Requirements:**
 - IntuneWinAppUtil.exe must be downloaded (see below)
