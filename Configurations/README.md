@@ -6,14 +6,17 @@
 
 This application generates a landing page for Windows 11 Single-App Kiosk devices running Microsoft Edge. The landing page displays the device's computer name and provides a branded entry point to the Punto de Compra (Point of Purchase) system.
 
-## What It Does
+## How It Works
 
-When a kiosk device starts up, customers see a welcome screen that:
-
-- Displays the **Lider Chile logo**
-- Shows the **computer name** in the upper-right corner (for device identification)
-- Provides a **clickable button** to enter the Punto de Compra system
-- **Automatically redirects** to the main application after 20 seconds
+1. The PowerShell script reads the device's computer name from Windows
+2. It creates the folder `C:\Walmart Applications\LandingPage` if it doesn't exist
+3. It generates an HTML file (`index.html`) with the computer name embedded
+4. The HTML file contains all styling and the Lider logo inline (no external files needed)
+5. When displayed in Edge, customers see a branded welcome screen with:
+   - The **Lider Chile logo**
+   - The **computer name** in the upper-right corner (for device identification)
+   - A **clickable button** to enter the Punto de Compra system
+   - A **countdown timer** that automatically redirects after 20 seconds
 
 ## Files Included
 
@@ -178,14 +181,6 @@ After deployment, configure Edge to open the landing page. Set the kiosk URL to:
 ```
 file:///C:/Walmart%20Applications/LandingPage/index.html
 ```
-
-## How It Works
-
-1. The PowerShell script reads the device's computer name from Windows
-2. It generates an HTML file (`index.html`) with the computer name embedded
-3. The HTML file contains all styling and the Lider logo inline (no external files needed)
-4. When displayed in Edge, customers see the branded landing page
-5. After 20 seconds, the page automatically redirects to the Punto de Compra application
 
 ## Configuration
 
