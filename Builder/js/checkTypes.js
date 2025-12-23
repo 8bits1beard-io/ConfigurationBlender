@@ -712,6 +712,14 @@ function getCheckProperties() {
     const type = document.getElementById('checkType').value;
     const properties = {};
 
+    function normalizeTaskPath(taskPath) {
+        const normalized = (taskPath || '\\').trim();
+        if (!normalized.endsWith('\\')) {
+            return `${normalized}\\`;
+        }
+        return normalized;
+    }
+
     switch (type) {
         case 'Application':
             properties.applicationName = document.getElementById('prop_applicationName').value;
@@ -778,7 +786,7 @@ function getCheckProperties() {
             break;
         case 'ScheduledTaskExists':
             properties.taskName = document.getElementById('prop_taskName').value;
-            properties.taskPath = document.getElementById('prop_taskPath').value;
+            properties.taskPath = normalizeTaskPath(document.getElementById('prop_taskPath').value);
             properties.execute = document.getElementById('prop_execute').value;
             properties.arguments = document.getElementById('prop_arguments').value;
             properties.trigger = document.getElementById('prop_trigger').value;

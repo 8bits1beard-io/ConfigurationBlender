@@ -642,7 +642,8 @@ function Repair-ScheduledTaskExists {
     param($Properties, $CheckName)
 
     try {
-        $existingTask = Get-ScheduledTask -TaskName $Properties.taskName -ErrorAction SilentlyContinue
+        $taskPath = if ($Properties.taskPath) { $Properties.taskPath } else { "\" }
+        $existingTask = Get-ScheduledTask -TaskName $Properties.taskName -TaskPath $taskPath -ErrorAction SilentlyContinue
 
         if ($null -eq $existingTask) {
             $action = New-ScheduledTaskAction -Execute $Properties.execute -Argument $Properties.arguments
@@ -657,17 +658,17 @@ function Repair-ScheduledTaskExists {
             $settings = New-ScheduledTaskSettingsSet
             $task = New-ScheduledTask -Action $action -Principal $principal -Trigger $trigger -Settings $settings
 
-            Register-ScheduledTask $Properties.taskName -InputObject $task | Out-Null
+            Register-ScheduledTask -TaskName $Properties.taskName -TaskPath $taskPath -InputObject $task | Out-Null
 
             return @{
                 Success = $true
-                Action = "Created scheduled task: $($Properties.taskName)"
+                Action = "Created scheduled task: $taskPath$($Properties.taskName)"
             }
         }
 
         return @{
             Success = $true
-            Action = "Scheduled task already exists"
+            Action = "Scheduled task already exists at path: $taskPath"
         }
     } catch {
         return @{

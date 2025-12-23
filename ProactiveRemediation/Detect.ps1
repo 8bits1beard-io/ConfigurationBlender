@@ -515,12 +515,13 @@ function Test-RegistryValue {
 function Test-ScheduledTaskExists {
     param($Properties)
 
-    $task = Get-ScheduledTask -TaskName $Properties.taskName -ErrorAction SilentlyContinue
+    $taskPath = if ($Properties.taskPath) { $Properties.taskPath } else { "\" }
+    $task = Get-ScheduledTask -TaskName $Properties.taskName -TaskPath $taskPath -ErrorAction SilentlyContinue
 
     if ($null -eq $task) {
         return @{
             Passed = $false
-            Issue = "Scheduled task '$($Properties.taskName)' does not exist"
+            Issue = "Scheduled task '$($Properties.taskName)' does not exist at path '$taskPath'"
         }
     }
 

@@ -49,6 +49,15 @@ function validateConfiguration() {
                     });
                 }
                 break;
+            case 'ScheduledTaskExists':
+                if (check.properties.taskPath && !check.properties.taskPath.endsWith('\\')) {
+                    warnings.push({
+                        message: `Check "${check.name}": taskPath should end with "\\\\" (e.g., "\\\\MyTasks\\\\"). It will be normalized on save.`,
+                        checkIndex: index,
+                        checkName: check.name
+                    });
+                }
+                break;
             case 'FilesExist':
             case 'FolderExists':
             case 'DriverInstalled':
